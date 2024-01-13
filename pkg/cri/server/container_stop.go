@@ -24,6 +24,7 @@ import (
 	"time"
 
 	eventtypes "github.com/containerd/containerd/v2/api/events"
+	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/errdefs"
 	containerstore "github.com/containerd/containerd/v2/pkg/cri/store/container"
 	ctrdutil "github.com/containerd/containerd/v2/pkg/cri/util"
@@ -92,6 +93,11 @@ func (c *criService) stopContainer(ctx context.Context, container containerstore
 			return cleanupUnknownContainer(ctx, id, container, sandboxID, c)
 		}
 		return nil
+	}
+
+	_, err = c.checkpointContainerBeforeStop(ctx, container, task)
+	if err != nil {
+		log.G(ctx).Errorf("Failed to checkpoint container <%s> when try to stop it", container.ID)
 	}
 
 	// Handle unknown state.
@@ -216,4 +222,22 @@ func cleanupUnknownContainer(ctx context.Context, id string, cntr containerstore
 		ExitStatus:  unknownExitCode,
 		ExitedAt:    protobuf.ToTimestamp(time.Now()),
 	}, cntr, sandboxID, c)
+}
+
+func (c *criService) checkpointContainerBeforeStop(ctx context.Context, container containerstore.Container, task containerd.Task) (containerd.Image, error) {
+	ccr, err := c.client.LoadContainer(ctx, container.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load containerd container when try to checkpoint container <%s>: %w", container.ID, err)
+	}
+
+	opts := []containerd.CheckpointOpts{
+		containerd.WithCheckpointRuntime,
+		containerd.WithCheckpointImage,
+		containerd.WithCheckpointRW,
+		containerd.WithCheckpointTask,
+	}
+
+	ref := fmt.Sprintf("checkpoint-%s", container.ID)
+
+	return ccr.Checkpoint(ctx, ref, opts...)
 }
