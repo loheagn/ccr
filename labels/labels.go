@@ -27,3 +27,7 @@ const LabelSharedNamespace = "containerd.io/namespace.shareable"
 // LabelDistributionSource is added to content to indicate its origin.
 // e.g., "containerd.io/distribution.source.docker.io=library/redis"
 const LabelDistributionSource = "containerd.io/distribution.source"
+
+const LabelCheckpointSandbox = "loheagn.com/checkpoint/sandbox"
+const LabelCheckpointFromImage = "loheagn.com/checkpoint/from.image"
+const LabelContainerNameInPod = "loheagn.com/checkpoint/container.name.in.pod"

@@ -118,6 +118,13 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	if ociRuntime.Path != "" {
 		taskOpts = append(taskOpts, containerd.WithRuntimePath(ociRuntime.Path))
 	}
+
+	if opt, err := containerd.TaskWithCheckpoint(ctx, c.client, container); err != nil {
+		log.G(ctx).Errorf("failed to create task with checkpoint opt: %s", err.Error())
+	} else if opt != nil {
+		taskOpts = append(taskOpts, opt)
+	}
+
 	task, err := container.NewTask(ctx, ioCreation, taskOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create containerd task: %w", err)

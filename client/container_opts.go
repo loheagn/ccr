@@ -22,10 +22,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/containerd/containerd/v2/ccr/model"
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/content"
 	"github.com/containerd/containerd/v2/errdefs"
 	"github.com/containerd/containerd/v2/images"
+	"github.com/containerd/containerd/v2/labels"
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/oci"
 	"github.com/containerd/containerd/v2/protobuf"
@@ -266,6 +268,32 @@ func withNewSnapshot(id string, i Image, readonly bool, opts ...snapshots.Opt) N
 		}
 		c.SnapshotKey = id
 		c.Image = i.Name()
+		return nil
+	}
+}
+
+func WithContainerFromCheckpoint(cp *model.Checkpoint) NewContainerOpts {
+	return func(ctx context.Context, client *Client, c *containers.Container) error {
+		if cp == nil {
+			return nil
+		}
+
+		if c.Labels == nil {
+			c.Labels = make(map[string]string)
+		}
+
+		c.Labels[labels.LabelCheckpointFromImage] = cp.Ref
+		c.Labels[labels.LabelCheckpointSandbox] = cp.Sandbox
+		return nil
+	}
+}
+
+func WithContainerNameInPod(containerName string) NewContainerOpts {
+	return func(ctx context.Context, client *Client, c *containers.Container) error {
+		if c.Labels == nil {
+			c.Labels = make(map[string]string)
+		}
+		c.Labels[labels.LabelContainerNameInPod] = containerName
 		return nil
 	}
 }

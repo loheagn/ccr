@@ -40,6 +40,8 @@ const (
 	LabelSnapshotUIDMapping = "containerd.io/snapshot/uidmapping"
 	// LabelSnapshotGIDMapping is the label used for GID mappings
 	LabelSnapshotGIDMapping = "containerd.io/snapshot/gidmapping"
+
+	LabelSnapshotExtraRWPath = "containerd.io/snapshot/loheagn.extra.rw.path"
 )
 
 // Kind identifies the kind of snapshot.

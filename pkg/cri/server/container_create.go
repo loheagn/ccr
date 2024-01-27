@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -34,8 +35,13 @@ import (
 	"github.com/opencontainers/selinux/go-selinux/label"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
+	"github.com/containerd/containerd/v2/ccr"
+	"github.com/containerd/containerd/v2/ccr/model"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/containers"
+	"github.com/containerd/containerd/v2/content"
+	"github.com/containerd/containerd/v2/errdefs"
+	"github.com/containerd/containerd/v2/labels"
 	"github.com/containerd/containerd/v2/oci"
 	"github.com/containerd/containerd/v2/pkg/blockio"
 	"github.com/containerd/containerd/v2/pkg/cri/annotations"
@@ -44,9 +50,12 @@ import (
 	crilabels "github.com/containerd/containerd/v2/pkg/cri/labels"
 	customopts "github.com/containerd/containerd/v2/pkg/cri/opts"
 	containerstore "github.com/containerd/containerd/v2/pkg/cri/store/container"
+	"github.com/containerd/containerd/v2/pkg/cri/store/sandbox"
 	"github.com/containerd/containerd/v2/pkg/cri/util"
 	"github.com/containerd/containerd/v2/platforms"
 )
+
+const checkpointImageNameLabel = "org.opencontainers.image.ref.name"
 
 func init() {
 	typeurl.Register(&containerstore.Metadata{},
@@ -107,9 +116,18 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		Config:    config,
 	}
 
+	checkpoint, checkpointIndex, checkpointModel, needRestore := c.getCheckpointImage(ctx, sandbox, metadata)
+
 	// Prepare container image snapshot. For container, the image should have
 	// been pulled before creating the container, so do not ensure the image.
-	image, err := c.LocalResolve(config.GetImage().GetImage())
+	baseImage := config.GetImage().GetImage()
+	if needRestore {
+		baseImage, ok := checkpointIndex.Annotations[checkpointImageNameLabel]
+		if !ok || baseImage == "" {
+			return nil, fmt.Errorf("no base image annotation in checkpoint image")
+		}
+	}
+	image, err := c.LocalResolve(baseImage)
 	if err != nil {
 		return nil, fmt.Errorf("failed to resolve image %q: %w", config.GetImage().GetImage(), err)
 	}
@@ -213,16 +231,25 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		return nil, err
 	}
 
+	var opts []containerd.NewContainerOpts
+
 	// Set snapshotter before any other options.
-	opts := []containerd.NewContainerOpts{
-		containerd.WithSnapshotter(c.RuntimeSnapshotter(ctx, ociRuntime)),
-		// Prepare container rootfs. This is always writeable even if
-		// the container wants a readonly rootfs since we want to give
-		// the runtime (runc) a chance to modify (e.g. to create mount
-		// points corresponding to spec.Mounts) before making the
-		// rootfs readonly (requested by spec.Root.Readonly).
-		customopts.WithNewSnapshot(id, containerdImage, sOpts...),
+	if needRestore {
+		opts = []containerd.NewContainerOpts{
+			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex),
+		}
+	} else {
+		opts = []containerd.NewContainerOpts{
+			containerd.WithSnapshotter(c.RuntimeSnapshotter(ctx, ociRuntime)),
+			// Prepare container rootfs. This is always writeable even if
+			// the container wants a readonly rootfs since we want to give
+			// the runtime (runc) a chance to modify (e.g. to create mount
+			// points corresponding to spec.Mounts) before making the
+			// rootfs readonly (requested by spec.Root.Readonly).
+			customopts.WithNewSnapshot(id, containerdImage, sOpts...),
+		}
 	}
+
 	if len(volumeMounts) > 0 {
 		mountMap := make(map[string]string)
 		for _, v := range volumeMounts {
@@ -274,7 +301,14 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 		containerd.WithRuntime(runtimeName, runtimeOption),
 		containerd.WithContainerLabels(containerLabels),
 		containerd.WithContainerExtension(crilabels.ContainerMetadataExtension, &meta),
+		containerd.WithContainerNameInPod(containerName),
 	)
+
+	if needRestore {
+		opts = append(opts,
+			containerd.WithContainerFromCheckpoint(checkpointModel),
+		)
+	}
 
 	opts = append(opts, containerd.WithSandbox(sandboxID))
 
@@ -1068,4 +1102,61 @@ func (c *criService) runtimeInfo(ctx context.Context, id string) (string, typeur
 	}
 
 	return "", nil, err
+}
+
+func (c *criService) getCheckpointImage(ctx context.Context, sb sandbox.Sandbox, ctrMeta *runtime.ContainerMetadata) (checkpointImage containerd.Image, checkpointImageIdx *imagespec.Index, checkpointModel *model.Checkpoint, needRestore bool) {
+	cpSB, ok := sb.Config.GetAnnotations()[labels.LabelCheckpointSandbox]
+	if !ok {
+		return nil, nil, nil, false
+	}
+
+	cp, err := ccr.GetCheckpoint(cpSB, ctrMeta.GetName())
+	log.G(ctx).Warnf("loheagn got checkpoint: %v, sandbox %s, container %s", cp, cpSB, ctrMeta.GetName())
+	if err != nil {
+		log.G(ctx).Errorf("Failed to get checkpoint for sandbox %q and container %q: %v", cpSB, ctrMeta.GetName(), err)
+		return nil, nil, nil, false
+	}
+
+	if cp.Ref == "" {
+		return nil, nil, nil, false
+	}
+	checkpoint, err := c.client.GetImage(ctx, cp.Ref)
+	if err != nil {
+		if !errdefs.IsNotFound(err) {
+			return nil, nil, nil, false
+		}
+		ck, err := c.client.Fetch(ctx, cp.Ref)
+		if err != nil {
+			return nil, nil, nil, false
+		}
+		checkpoint = containerd.NewImage(c.client, ck)
+	}
+
+	checkpointIndex, err := c.decodeIndex(ctx, checkpoint)
+	if err != nil {
+		return nil, nil, nil, false
+	}
+
+	return checkpoint, checkpointIndex, cp, true
+}
+
+func (c *criService) decodeIndex(ctx context.Context, image containerd.Image) (*imagespec.Index, error) {
+	var index imagespec.Index
+	store := c.client.ContentStore()
+
+	p, err := content.ReadBlob(ctx, store, image.Target())
+	if err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(p, &index); err != nil {
+		return nil, err
+	}
+
+	ctx, done, err := c.client.WithLease(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer done(ctx)
+
+	return &index, nil
 }

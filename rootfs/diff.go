@@ -19,7 +19,9 @@ package rootfs
 import (
 	"context"
 	"fmt"
+	"io"
 
+	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/diff"
 	"github.com/containerd/containerd/v2/mount"
 	"github.com/containerd/containerd/v2/pkg/cleanup"
@@ -64,4 +66,47 @@ func CreateDiff(ctx context.Context, snapshotID string, sn snapshots.Snapshotter
 	}
 
 	return d.Compare(ctx, lower, upper, opts...)
+}
+
+func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Snapshotter, d diff.Comparer, writer io.WriteCloser) error {
+	info, err := sn.Stat(ctx, snapshotID)
+	if err != nil {
+		return err
+	}
+
+	lowerKey := fmt.Sprintf("%s-parent-view-%s", info.Parent, uniquePart())
+	lower, err := sn.View(ctx, lowerKey, info.Parent)
+	if err != nil {
+		return err
+	}
+	defer cleanup.Do(ctx, func(ctx context.Context) {
+		sn.Remove(ctx, lowerKey)
+	})
+
+	var upper []mount.Mount
+	if info.Kind == snapshots.KindActive {
+		upper, err = sn.Mounts(ctx, snapshotID)
+		if err != nil {
+			return err
+		}
+	} else {
+		upperKey := fmt.Sprintf("%s-view-%s", snapshotID, uniquePart())
+		upper, err = sn.View(ctx, upperKey, snapshotID)
+		if err != nil {
+			return err
+		}
+		defer cleanup.Do(ctx, func(ctx context.Context) {
+			sn.Remove(ctx, upperKey)
+		})
+	}
+
+	return mount.WithTempMount(ctx, lower, func(lowerRoot string) error {
+		return mount.WithReadonlyTempMount(ctx, upper, func(upperRoot string) error {
+			if errOpen := archive.WriteDiff(ctx, writer, lowerRoot, upperRoot); errOpen != nil {
+				return fmt.Errorf("failed to write diff: %w", errOpen)
+			}
+			return nil
+		})
+	})
+
 }

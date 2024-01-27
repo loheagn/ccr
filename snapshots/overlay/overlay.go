@@ -619,12 +619,20 @@ func (o *snapshotter) mounts(s storage.Snapshot, info snapshots.Info) []mount.Mo
 		}
 	}
 
-	parentPaths := make([]string, len(s.ParentIDs))
-	for i := range s.ParentIDs {
-		parentPaths[i] = o.upperPath(s.ParentIDs[i])
+	parentPaths := make([]string, 0, len(s.ParentIDs))
+
+	if rwPath, ok := info.Labels[snapshots.LabelSnapshotExtraRWPath]; ok {
+		parentPaths = append(parentPaths, rwPath)
 	}
+
+	for i := range s.ParentIDs {
+		parentPaths = append(parentPaths, o.upperPath(s.ParentIDs[i]))
+	}
+
 	options = append(options, fmt.Sprintf("lowerdir=%s", strings.Join(parentPaths, ":")))
 	options = append(options, o.options...)
+
+	log.G(context.TODO()).Infof("overlay options: %s", strings.Join(parentPaths, ":"))
 
 	return []mount.Mount{
 		{

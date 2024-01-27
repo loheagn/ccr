@@ -21,12 +21,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"runtime"
 
 	tasks "github.com/containerd/containerd/v2/api/services/tasks/v1"
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/diff"
 	"github.com/containerd/containerd/v2/images"
+	"github.com/containerd/containerd/v2/labels"
 	"github.com/containerd/containerd/v2/platforms"
 	"github.com/containerd/containerd/v2/protobuf"
 	"github.com/containerd/containerd/v2/protobuf/proto"
@@ -136,6 +138,27 @@ func WithCheckpointRW(ctx context.Context, client *Client, c *containers.Contain
 	}
 	index.Manifests = append(index.Manifests, rw)
 	return nil
+}
+
+func WithExportCheckpointRW(crSB string) CheckpointOpts {
+	return func(ctx context.Context, client *Client, c *containers.Container, index *imagespec.Index, copts *options.CheckpointOptions) error {
+		rwPath := fmt.Sprintf("/root/ccr-test/%s.tar", crSB)
+
+		file, err := os.OpenFile(rwPath, os.O_WRONLY|os.O_CREATE, 0666)
+		if err != nil {
+			return err
+		}
+		defer file.Close()
+
+		index.Annotations[labels.LabelCheckpointSandbox] = crSB
+
+		return rootfs.CreateDiffAndWrite(ctx,
+			c.SnapshotKey,
+			client.SnapshotService(c.Snapshotter),
+			client.DiffService(),
+			file,
+		)
+	}
 }
 
 // WithCheckpointTaskExit causes the task to exit after checkpoint

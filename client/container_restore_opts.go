@@ -20,14 +20,22 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 
+	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/content"
 	"github.com/containerd/containerd/v2/images"
+	"github.com/containerd/containerd/v2/labels"
+	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
+	"github.com/containerd/containerd/v2/snapshots"
+	"github.com/containerd/typeurl/v2"
 	"github.com/opencontainers/image-spec/identity"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/opencontainers/runtime-spec/specs-go"
 )
 
 var (
@@ -63,7 +71,13 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 			return err
 		}
 		parent := identity.ChainID(diffIDs).String()
-		if _, err := client.SnapshotService(snapshotter).Prepare(ctx, id, parent); err != nil {
+
+		snapshotInfoLabels := make(map[string]string)
+		if rwPath, err := unpackRWLayer(index.Annotations[labels.LabelCheckpointSandbox]); err == nil && rwPath != "" {
+			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath
+		}
+
+		if _, err := client.SnapshotService(snapshotter).Prepare(ctx, id, parent, snapshots.WithLabels(snapshotInfoLabels)); err != nil {
 			return err
 		}
 		c.Image = i.Name()
@@ -71,6 +85,23 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 		c.Snapshotter = snapshotter
 		return nil
 	}
+}
+
+func unpackRWLayer(crSB string) (string, error) {
+	rwPath, err := os.MkdirTemp("/root/ccr-test", "rw-restore")
+	if err != nil {
+		return "", err
+	}
+
+	tarReader, err := os.Open(fmt.Sprintf("/root/ccr-test/%s.tar", crSB))
+	if err != nil {
+		return "", err
+	}
+	defer tarReader.Close()
+	archive.Apply(context.TODO(), rwPath, tarReader)
+
+	return rwPath, nil
+
 }
 
 // WithRestoreRuntime restores the runtime for the container
@@ -120,11 +151,21 @@ func WithRestoreSpec(ctx context.Context, id string, client *Client, checkpoint 
 		if err != nil {
 			return fmt.Errorf("unable to read checkpoint config: %w", err)
 		}
+
 		var any ptypes.Any
 		if err := proto.Unmarshal(data, &any); err != nil {
 			return err
 		}
-		c.Spec = &any
+
+		ns, _ := namespaces.NamespaceRequired(ctx)
+		spec := specs.Spec{}
+		if err := typeurl.UnmarshalTo(&any, &spec); err != nil {
+			fmt.Println(err.Error())
+			return err
+		}
+		spec.Linux.CgroupsPath = filepath.Join("/", ns, id)
+
+		c.Spec, _ = typeurl.MarshalAny(&spec)
 		return nil
 	}
 }

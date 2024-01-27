@@ -25,6 +25,7 @@ import (
 	"github.com/containerd/containerd/v2/api/types"
 	"github.com/containerd/containerd/v2/errdefs"
 	"github.com/containerd/containerd/v2/images"
+	"github.com/containerd/containerd/v2/labels"
 	"github.com/containerd/containerd/v2/mount"
 	"github.com/containerd/containerd/v2/runtime/v2/runc/options"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -48,6 +49,29 @@ func WithRuntimePath(absRuntimePath string) NewTaskOpts {
 		info.RuntimePath = absRuntimePath
 		return nil
 	}
+}
+
+func TaskWithCheckpoint(ctx context.Context, client *Client, container Container) (NewTaskOpts, error) {
+	ctr, err := client.ContainerService().Get(ctx, container.ID())
+	if err != nil {
+		return nil, err
+	}
+	checkpointImage := ctr.Labels[labels.LabelCheckpointFromImage]
+	if len(checkpointImage) == 0 {
+		return nil, nil
+	}
+	checkpoint, err := client.GetImage(ctx, checkpointImage)
+	if err != nil {
+		if !errdefs.IsNotFound(err) {
+			return nil, err
+		}
+		ck, err := client.Fetch(ctx, checkpointImage)
+		if err != nil {
+			return nil, err
+		}
+		checkpoint = NewImage(client, ck)
+	}
+	return WithTaskCheckpoint(checkpoint), nil
 }
 
 // WithTaskCheckpoint allows a task to be created with live runtime and memory data from a
