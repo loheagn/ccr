@@ -18,7 +18,7 @@ func TestM(t *testing.T) {
 	assert.Equal(t, 1, checkpoint.Round)
 	assert.Equal(t, false, checkpoint.Committed)
 
-	checkpoint, err = CommitCheckpoint(checkpoint.ID, checkpoint.Sandbox, checkpoint.Container)
+	checkpoint, err = CommitCheckpoint(checkpoint.ID)
 	assert.NoError(t, err)
 	assert.NotNil(t, checkpoint)
 	assert.Equal(t, true, checkpoint.Committed)
@@ -35,7 +35,7 @@ func TestM(t *testing.T) {
 	assert.Equal(t, 2, checkpoint.Round)
 	assert.Equal(t, false, checkpoint.Committed)
 
-	checkpoint, err = CommitCheckpoint(checkpoint.ID, checkpoint.Sandbox, checkpoint.Container)
+	checkpoint, err = CommitCheckpoint(checkpoint.ID)
 	assert.NoError(t, err)
 	assert.NotNil(t, checkpoint)
 	assert.Equal(t, true, checkpoint.Committed)

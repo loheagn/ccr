@@ -17,7 +17,7 @@ var (
 )
 
 func latestCheckpointQuery(sandbox, container string) *gorm.DB {
-	return db.Model(&model.Checkpoint{}).Where("sandbox = ? AND container = ?", sandbox, container).Order("round desc")
+	return db.Model(&model.Checkpoint{}).Where("sandbox = ? AND container = ? AND committed = ?", sandbox, container, true).Order("round desc")
 }
 
 func createCheckpoint(w http.ResponseWriter, r *http.Request) {

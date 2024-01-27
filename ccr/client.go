@@ -63,11 +63,9 @@ func CreateCheckpoint(sandbox, container string) (*model.Checkpoint, error) {
 	return client.RequestForCheckpoint(endpoint.CreateCheckpoint, req)
 }
 
-func CommitCheckpoint(id, sandbox, container string) (*model.Checkpoint, error) {
+func CommitCheckpoint(id string) (*model.Checkpoint, error) {
 	req := &model.Checkpoint{
-		ID:        id,
-		Sandbox:   sandbox,
-		Container: container,
+		ID: id,
 	}
 	return client.RequestForCheckpoint(endpoint.CommitCheckpoint, req)
 }
