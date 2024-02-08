@@ -18,6 +18,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync/atomic"
 	"syscall"
@@ -243,13 +244,6 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 		return nil, fmt.Errorf("failed to load containerd container when try to checkpoint container <%s>: %w", container.ID, err)
 	}
 
-	opts := []containerd.CheckpointOpts{
-		containerd.WithCheckpointRuntime,
-		containerd.WithCheckpointImage,
-		containerd.WithExportCheckpointRW(crSB),
-		containerd.WithCheckpointTask,
-	}
-
 	cntr, err := c.client.ContainerService().Get(ctx, container.ID)
 	if err != nil {
 		return nil, err
@@ -262,13 +256,23 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 		return nil, err
 	}
 
+	opts := []containerd.CheckpointOpts{
+		containerd.WithCheckpointRuntime,
+		containerd.WithCheckpointImage,
+		containerd.WithExportCheckpointRW(crSB, cp.ID),
+		containerd.WithCheckpointTask,
+	}
+
 	image, err := cr.Checkpoint(ctx, cp.Ref, opts...)
 	if err != nil {
 		log.G(ctx).Errorf("Failed to checkpoint container %s: %s", containerName, err.Error())
 		return nil, err
 	}
 
-	_, err = ccr.CommitCheckpoint(cp.ID)
+	cp, err = ccr.CommitCheckpoint(cp.ID)
+
+	data, _ := json.Marshal(cp)
+	log.G(ctx).Warnf("final checkpoint is %s", string(data))
 
 	return image, err
 }

@@ -18,16 +18,17 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
-	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/content"
 	"github.com/containerd/containerd/v2/images"
 	"github.com/containerd/containerd/v2/labels"
+	"github.com/containerd/containerd/v2/mount"
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
@@ -52,6 +53,7 @@ type RestoreOpts func(context.Context, string, *Client, Image, *imagespec.Index)
 
 // WithRestoreImage restores the image for the container
 func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint Image, index *imagespec.Index) NewContainerOpts {
+	restorePath := os.Getenv("CCR_RESTORE_RW_PATH")
 	return func(ctx context.Context, client *Client, c *containers.Container) error {
 		name, ok := index.Annotations[checkpointImageNameLabel]
 		if !ok || name == "" {
@@ -73,7 +75,19 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 		parent := identity.ChainID(diffIDs).String()
 
 		snapshotInfoLabels := make(map[string]string)
-		if rwPath, err := unpackRWLayer(index.Annotations[labels.LabelCheckpointSandbox]); err == nil && rwPath != "" {
+
+		if mountInfo, ok := index.Annotations[labels.LabelCheckpointRWMountInfo]; ok {
+			m := mount.Mount{}
+			if err := json.Unmarshal([]byte(mountInfo), &m); err != nil {
+				return err
+			}
+			rwPath, err := os.MkdirTemp(restorePath, fmt.Sprintf("%s-", c.ID))
+			if err != nil {
+				return err
+			}
+			if err := m.Mount(rwPath); err != nil {
+				return err
+			}
 			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath
 		}
 
@@ -85,23 +99,6 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 		c.Snapshotter = snapshotter
 		return nil
 	}
-}
-
-func unpackRWLayer(crSB string) (string, error) {
-	rwPath, err := os.MkdirTemp("/root/ccr-test", "rw-restore")
-	if err != nil {
-		return "", err
-	}
-
-	tarReader, err := os.Open(fmt.Sprintf("/root/ccr-test/%s.tar", crSB))
-	if err != nil {
-		return "", err
-	}
-	defer tarReader.Close()
-	archive.Apply(context.TODO(), rwPath, tarReader)
-
-	return rwPath, nil
-
 }
 
 // WithRestoreRuntime restores the runtime for the container

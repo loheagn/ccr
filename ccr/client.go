@@ -77,3 +77,27 @@ func GetCheckpoint(sandbox, container string) (*model.Checkpoint, error) {
 	}
 	return client.RequestForCheckpoint(endpoint.GetCheckpoint, req)
 }
+
+func UploadTar(id string, tarPath string) (*model.Checkpoint, error) {
+	reqReader, err := os.Open(tarPath)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := client.c.Post(client.baseURL+endpoint.UploadTar+"?id="+id, "application/octet-stream", reqReader)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("request failed with status code %d", resp.StatusCode)
+	}
+
+	var checkpoint model.Checkpoint
+	err = json.NewDecoder(resp.Body).Decode(&checkpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	return &checkpoint, nil
+}

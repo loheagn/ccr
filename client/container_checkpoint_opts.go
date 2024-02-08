@@ -19,12 +19,14 @@ package client
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"runtime"
 
 	tasks "github.com/containerd/containerd/v2/api/services/tasks/v1"
+	"github.com/containerd/containerd/v2/ccr"
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/diff"
 	"github.com/containerd/containerd/v2/images"
@@ -140,7 +142,7 @@ func WithCheckpointRW(ctx context.Context, client *Client, c *containers.Contain
 	return nil
 }
 
-func WithExportCheckpointRW(crSB string) CheckpointOpts {
+func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 	return func(ctx context.Context, client *Client, c *containers.Container, index *imagespec.Index, copts *options.CheckpointOptions) error {
 		rwPath := fmt.Sprintf("/root/ccr-test/%s.tar", crSB)
 
@@ -150,14 +152,28 @@ func WithExportCheckpointRW(crSB string) CheckpointOpts {
 		}
 		defer file.Close()
 
-		index.Annotations[labels.LabelCheckpointSandbox] = crSB
-
-		return rootfs.CreateDiffAndWrite(ctx,
+		if err := rootfs.CreateDiffAndWrite(ctx,
 			c.SnapshotKey,
 			client.SnapshotService(c.Snapshotter),
 			client.DiffService(),
 			file,
-		)
+		); err != nil {
+			return err
+		}
+
+		cp, err := ccr.UploadTar(checkpointID, file.Name())
+		if err != nil {
+			return err
+		}
+		cpData, err := json.Marshal(cp.ToMount())
+		if err != nil {
+			return err
+		}
+
+		index.Annotations[labels.LabelCheckpointSandbox] = crSB
+		index.Annotations[labels.LabelCheckpointRWMountInfo] = string(cpData)
+
+		return nil
 	}
 }
 

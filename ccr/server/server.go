@@ -3,17 +3,22 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 
+	"github.com/otiai10/copy"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
+	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/ccr/endpoint"
 	"github.com/containerd/containerd/v2/ccr/model"
 	"github.com/google/uuid"
 )
 
 var (
-	db *gorm.DB
+	db        *gorm.DB
+	storePath string
 )
 
 func latestCheckpointQuery(sandbox, container string) *gorm.DB {
@@ -104,6 +109,44 @@ func getCheckpoint(w http.ResponseWriter, r *http.Request) {
 	got.WriteToResponse(w)
 }
 
+func uploadTar(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	c := model.Checkpoint{}
+	db.First(&c, c.ID)
+	remotePath, err := os.MkdirTemp(storePath, fmt.Sprintf("%s-%s-", c.Sandbox, c.Container))
+	if err != nil {
+		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		return
+	}
+	remotePath, _ = filepath.Abs(remotePath)
+
+	{
+		lastCheckpoint := model.Checkpoint{}
+		if result := latestCheckpointQuery(c.Sandbox, c.Container).First(&lastCheckpoint); result.Error == nil {
+			prePath := lastCheckpoint.RemotePath()
+			copy.Copy(prePath, remotePath)
+		}
+	}
+
+	archive.Apply(r.Context(), remotePath, r.Body)
+
+	c.Mount = model.CCRMount{
+		Type:   "nfs",
+		Source: "127.0.0.1:" + remotePath,
+		Options: []string{
+			"vers=4",
+			"addr=127.0.0.1",
+		},
+	}
+
+	db.Save(&c)
+
+	c.WriteToResponse(w)
+}
+
 func setupDB() {
 	var err error
 	db, err = gorm.Open(sqlite.Open("main.db"), &gorm.Config{})
@@ -116,8 +159,11 @@ func setupDB() {
 func main() {
 	setupDB()
 
+	storePath = os.Getenv("CCR_STORE_PATH")
+
 	http.HandleFunc(endpoint.GetCheckpoint, getCheckpoint)
 	http.HandleFunc(endpoint.CreateCheckpoint, createCheckpoint)
+	http.HandleFunc(endpoint.UploadTar, uploadTar)
 	http.HandleFunc(endpoint.CommitCheckpoint, commitCheckpoint)
 
 	// Starting the server on port 8080.
