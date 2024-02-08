@@ -32,6 +32,7 @@ import (
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/containerd/v2/snapshots"
 	"github.com/containerd/typeurl/v2"
 	"github.com/opencontainers/image-spec/identity"
@@ -85,7 +86,7 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 			if err != nil {
 				return err
 			}
-			if err := m.Mount(rwPath); err != nil {
+			if err := rrw.MountRRW("/root/rrw-test/kk.tar", rwPath); err != nil {
 				return err
 			}
 			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath
