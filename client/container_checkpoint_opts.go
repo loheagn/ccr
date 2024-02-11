@@ -35,6 +35,7 @@ import (
 	"github.com/containerd/containerd/v2/protobuf"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	"github.com/containerd/containerd/v2/rootfs"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/containerd/v2/runtime/v2/runc/options"
 	"github.com/opencontainers/go-digest"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -52,7 +53,23 @@ func WithCheckpointImage(ctx context.Context, client *Client, c *containers.Cont
 	if err != nil {
 		return err
 	}
-	index.Manifests = append(index.Manifests, ir.Target)
+
+	cs := client.ContentStore()
+
+	var target imagespec.Descriptor
+	if manifests, err := images.Children(ctx, cs, ir.Target); err == nil && len(manifests) > 0 {
+		matcher := platforms.NewMatcher(platforms.DefaultSpec())
+		for _, manifest := range manifests {
+			if manifest.Platform != nil && matcher.Match(*manifest.Platform) {
+				if _, err := images.Children(ctx, cs, manifest); err != nil {
+					return fmt.Errorf("no matching manifest: %w", err)
+				}
+				target = manifest
+				break
+			}
+		}
+	}
+	index.Manifests = append(index.Manifests, target)
 	return nil
 }
 
@@ -160,6 +177,37 @@ func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 		); err != nil {
 			return err
 		}
+
+		meta, blobReader, err := rrw.TarToRRWLayers(ctx, rwPath)
+		if err != nil {
+			return fmt.Errorf("failed to convert tar to rw layers: %w", err)
+		}
+
+		metaData, err := json.Marshal(meta)
+		if err != nil {
+			return fmt.Errorf("failed to marshal metadata: %w", err)
+		}
+
+		metaReader := bytes.NewReader(metaData)
+		desc, err := writeContent(ctx, client.ContentStore(), images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata", metaReader)
+		if err != nil {
+			return err
+		}
+		desc.Platform = &imagespec.Platform{
+			OS:           runtime.GOOS,
+			Architecture: runtime.GOARCH,
+		}
+		index.Manifests = append(index.Manifests, desc)
+
+		blobDesc, err := writeContent(ctx, client.contentStore, images.MediaTypeContainerd1LoheagnRRWContent, c.ID+"-rrw-content", blobReader)
+		if err != nil {
+			return err
+		}
+		desc.Platform = &imagespec.Platform{
+			OS:           runtime.GOOS,
+			Architecture: runtime.GOARCH,
+		}
+		index.Manifests = append(index.Manifests, blobDesc)
 
 		cp, err := ccr.UploadTar(checkpointID, file.Name())
 		if err != nil {

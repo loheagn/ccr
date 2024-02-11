@@ -1152,11 +1152,5 @@ func (c *criService) decodeIndex(ctx context.Context, image containerd.Image) (*
 		return nil, err
 	}
 
-	ctx, done, err := c.client.WithLease(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer done(ctx)
-
 	return &index, nil
 }

@@ -28,9 +28,11 @@ import (
 	"github.com/containerd/containerd/v2/ccr"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/errdefs"
+	"github.com/containerd/containerd/v2/images"
 	"github.com/containerd/containerd/v2/labels"
 	containerstore "github.com/containerd/containerd/v2/pkg/cri/store/container"
 	ctrdutil "github.com/containerd/containerd/v2/pkg/cri/util"
+	"github.com/containerd/containerd/v2/platforms"
 	"github.com/containerd/containerd/v2/protobuf"
 	"github.com/containerd/log"
 
@@ -102,9 +104,8 @@ func (c *criService) stopContainer(ctx context.Context, container containerstore
 	if err != nil {
 		log.G(ctx).Errorf("failed to get sandbox %s", sandboxID)
 	}
-	log.G(ctx).Infof("loheagn annotations: %v", sandbox.Metadata.Config.GetAnnotations())
 	if crSB, ok := sandbox.Metadata.Config.GetAnnotations()[labels.LabelCheckpointSandbox]; ok {
-		_, err = c.checkpointContainerBeforeStop(ctx, container, task, crSB)
+		_, err := c.checkpointContainerBeforeStop(ctx, container, task, crSB)
 		if err != nil {
 			log.G(ctx).Errorf("Failed to checkpoint container <%s> when try to stop it: %s", container.ID, err.Error())
 		}
@@ -270,9 +271,37 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 	}
 
 	cp, err = ccr.CommitCheckpoint(cp.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	data, _ := json.Marshal(cp)
 	log.G(ctx).Warnf("final checkpoint is %s", string(data))
 
-	return image, err
+	if err := c.client.Push(ctx, cp.Ref, image.Target(), containerd.WithPlatform(platforms.DefaultString())); err != nil {
+		return nil, err
+	}
+
+	return image, c.cleanupCheckpointStuff(ctx, image)
+}
+
+func (c *criService) cleanupCheckpointStuff(ctx context.Context, image containerd.Image) error {
+	index, err := c.decodeIndex(ctx, image)
+	if err != nil {
+		return err
+	}
+	if err := c.client.ImageService().Delete(ctx, image.Name()); err != nil {
+		return err
+	}
+	for _, m := range index.Manifests {
+		if !images.IsManifestType(m.MediaType) && !images.IsIndexType(m.MediaType) {
+			if err := c.client.ContentStore().Delete(ctx, m.Digest); err != nil {
+				return err
+			}
+		}
+	}
+	if err := c.client.ContentStore().Delete(ctx, image.Target().Digest); err != nil {
+		return err
+	}
+	return nil
 }

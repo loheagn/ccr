@@ -19,6 +19,9 @@ import (
 var (
 	db        *gorm.DB
 	storePath string
+
+	registryHost      = os.Getenv("CCR_REGISTRY_HOST")
+	registryNamespace = os.Getenv("CCR_REGISTRY_NAMESPACE")
 )
 
 func latestCheckpointQuery(sandbox, container string) *gorm.DB {
@@ -46,7 +49,7 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		round = got.Round + 1
 	}
 
-	ref := fmt.Sprintf("checkpoint-%s-%s:v%d", req.Sandbox, req.Container, round)
+	ref := fmt.Sprintf("%s/%s/checkpoint-%s-%s:v%d", registryHost, registryNamespace, req.Sandbox, req.Container, round)
 
 	newCheckpoint := &model.Checkpoint{
 		ID:        uuid.NewString(),
