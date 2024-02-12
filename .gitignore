@@ -15,3 +15,5 @@ _output/
 demo
 main.db
 .vscode
+
+__debug*
