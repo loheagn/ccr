@@ -10,6 +10,7 @@ require (
 	github.com/AdamKorcz/go-118-fuzz-build v0.0.0-20230306123547-8075edf89bb0
 	github.com/Microsoft/go-winio v0.6.1
 	github.com/Microsoft/hcsshim v0.12.0-rc.2
+	github.com/bloodorangeio/reggie v0.6.1
 	github.com/container-orchestrated-devices/container-device-interface v0.6.1
 	github.com/containerd/btrfs/v2 v2.0.0
 	github.com/containerd/cgroups/v3 v3.0.3
@@ -86,9 +87,12 @@ require (
 )
 
 require (
+	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
+	github.com/go-resty/resty/v2 v2.7.0 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-sqlite3 v1.14.17 // indirect
+	github.com/mitchellh/mapstructure v1.5.0 // indirect
 )
 
 require (
