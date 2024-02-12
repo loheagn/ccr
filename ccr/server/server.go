@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/otiai10/copy"
 	"gorm.io/driver/sqlite"
@@ -20,7 +21,17 @@ var (
 	db        *gorm.DB
 	storePath string
 
-	registryHost      = os.Getenv("CCR_REGISTRY_HOST")
+	registryHost = func() string {
+		host := os.Getenv("CCR_REGISTRY_HOST")
+		if strings.HasPrefix(host, "http://") {
+			return strings.TrimPrefix(host, "http://")
+		}
+		if strings.HasPrefix(host, "https://") {
+			return strings.TrimPrefix(host, "https://")
+		}
+		return host
+	}()
+
 	registryNamespace = os.Getenv("CCR_REGISTRY_NAMESPACE")
 )
 
@@ -49,7 +60,7 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		round = got.Round + 1
 	}
 
-	ref := fmt.Sprintf("%s/%s/checkpoint-%s-%s:v%d", registryHost, registryNamespace, req.Sandbox, req.Container, round)
+	ref := fmt.Sprintf("%s/%s:checkpoint-%s-%s-v%d", registryHost, registryNamespace, req.Sandbox, req.Container, round)
 
 	newCheckpoint := &model.Checkpoint{
 		ID:        uuid.NewString(),

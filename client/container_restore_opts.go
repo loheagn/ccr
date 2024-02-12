@@ -91,7 +91,16 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 				return nil
 			}
 
-			if err := rrw.MountRRW(metaReader, rwPath); err != nil {
+			rrwBlob, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
+				return m.MediaType == images.MediaTypeContainerd1LoheagnRRWContent
+			})
+
+			var rrwBlobDigest string
+			if ok {
+				rrwBlobDigest = rrwBlob.Digest.String()
+			}
+
+			if err := rrw.MountRRW(metaReader, rrwBlobDigest, rwPath); err != nil {
 				return err
 			}
 			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath

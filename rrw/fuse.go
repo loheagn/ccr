@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"encoding/json"
 	"io"
 	"log"
 	"path/filepath"
@@ -33,6 +34,8 @@ type RRWRoot struct {
 	fs.Inode
 
 	tr *tar.Reader
+
+	blobDigest string
 }
 
 // tarRoot implements NodeOnAdder
@@ -121,10 +124,17 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			p.AddChild(base, r.NewPersistentInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFIFO}), false)
 		case tar.TypeReg, tar.TypeRegA:
 			rf := &RRWInode{}
+
+			var fileInfo FileInfo
+			if err := json.Unmarshal(buf.Bytes(), &fileInfo); err != nil {
+				log.Printf("failed to unmarshal file info: %s", err.Error())
+				continue
+			}
+
+			rf.reader = NewDefaultRangeReader(r.blobDigest, fileInfo.Offset)
 			rf.Attr = attr
-			rf.Attr.Size = 9
+			rf.Attr.Size = fileInfo.Size
 			rf.Xattrs = xattrs
-			rf.Size = 9
 			p.AddChild(base, r.NewInode(ctx, rf, fs.StableAttr{}), false)
 		default:
 			log.Printf("entry %q: unsupported type '%c'", hdr.Name, hdr.Typeflag)
@@ -132,8 +142,11 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 	}
 }
 
-func MountRRW(reader io.ReaderAt, path string) error {
-	rrwRoot := &RRWRoot{tr: tar.NewReader(&ReaderAtWrapper{r: reader})}
+func MountRRW(metaReader io.ReaderAt, blobDigest, path string) error {
+	rrwRoot := &RRWRoot{
+		tr:         tar.NewReader(&ReaderAtWrapper{r: metaReader}),
+		blobDigest: blobDigest,
+	}
 
 	server, err := fs.Mount(path, rrwRoot, &fs.Options{})
 	if err != nil {
