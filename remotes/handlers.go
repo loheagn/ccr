@@ -100,6 +100,12 @@ func FetchHandler(ingester content.Ingester, fetcher Fetcher) images.HandlerFunc
 		if desc.MediaType == images.MediaTypeDockerSchema1Manifest {
 			return nil, fmt.Errorf("%v not supported", desc.MediaType)
 		}
+
+		if desc.MediaType == images.MediaTypeContainerd1LoheagnRRWContent {
+			log.G(ctx).Warnf("skip downloading the rrw content")
+			return nil, images.ErrSkipDesc
+		}
+
 		err := Fetch(ctx, ingester, fetcher, desc)
 		if errdefs.IsAlreadyExists(err) {
 			return nil, nil
