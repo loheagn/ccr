@@ -49,7 +49,7 @@ const (
 	MediaTypeContainerd1CheckpointOptions        = "application/vnd.containerd.container.checkpoint.options.v1+proto"
 	MediaTypeContainerd1CheckpointRuntimeName    = "application/vnd.containerd.container.checkpoint.runtime.name"
 	MediaTypeContainerd1CheckpointRuntimeOptions = "application/vnd.containerd.container.checkpoint.runtime.options+proto"
-	MediaTypeContainerd1LoheagnRRWMetadata       = "application/vnd.containerd.container.loheagn.rrw.metadata+json"
+	MediaTypeContainerd1LoheagnRRWMetadata       = "application/vnd.containerd.container.loheagn.rrw.metadata.tar"
 	MediaTypeContainerd1LoheagnRRWContent        = "application/vnd.containerd.container.loheagn.rrw.content+blob"
 
 	// MediaTypeDockerSchema1Manifest is the legacy Docker schema1 manifest

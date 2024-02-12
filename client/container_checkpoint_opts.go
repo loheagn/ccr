@@ -19,14 +19,12 @@ package client
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"runtime"
 
 	tasks "github.com/containerd/containerd/v2/api/services/tasks/v1"
-	"github.com/containerd/containerd/v2/ccr"
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/diff"
 	"github.com/containerd/containerd/v2/images"
@@ -149,7 +147,6 @@ func WithCheckpointRW(ctx context.Context, client *Client, c *containers.Contain
 	)
 	if err != nil {
 		return err
-
 	}
 	rw.Platform = &imagespec.Platform{
 		OS:           runtime.GOOS,
@@ -160,14 +157,16 @@ func WithCheckpointRW(ctx context.Context, client *Client, c *containers.Contain
 }
 
 func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
+	checkpointBasePath := os.Getenv("CCR_CHECKPOINT_RW_PATH")
+	if checkpointBasePath == "" {
+		checkpointBasePath = "/var/lib/temp"
+	}
 	return func(ctx context.Context, client *Client, c *containers.Container, index *imagespec.Index, copts *options.CheckpointOptions) error {
-		rwPath := fmt.Sprintf("/root/ccr-test/%s.tar", crSB)
-
-		file, err := os.OpenFile(rwPath, os.O_WRONLY|os.O_CREATE, 0666)
+		file, err := os.CreateTemp(checkpointBasePath, "origin-tar-*")
 		if err != nil {
 			return err
 		}
-		defer file.Close()
+		defer os.Remove(file.Name())
 
 		if err := rootfs.CreateDiffAndWrite(ctx,
 			c.SnapshotKey,
@@ -178,48 +177,52 @@ func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 			return err
 		}
 
-		meta, blobReader, err := rrw.TarToRRWLayers(ctx, rwPath)
+		metaFileName, blobFielName, err := rrw.SplitTar(ctx, file.Name())
 		if err != nil {
-			return fmt.Errorf("failed to convert tar to rw layers: %w", err)
+			return fmt.Errorf("failed to split tar: %w", err)
+		}
+		defer func() {
+			os.Remove(metaFileName)
+			os.Remove(blobFielName)
+		}()
+
+		writeFileToCS := func(filename string, mediaType, ref string) error {
+			fileStat, err := os.Stat(filename)
+			if err != nil {
+				return err
+			}
+			if fileStat.Size() == 0 {
+				return nil
+			}
+
+			fileReader, err := os.Open(filename)
+			if err != nil {
+				return err
+			}
+			defer fileReader.Close()
+
+			desc, err := writeContent(ctx, client.ContentStore(), mediaType, ref, fileReader)
+			if err != nil {
+				return err
+			}
+			desc.Platform = &imagespec.Platform{
+				OS:           runtime.GOOS,
+				Architecture: runtime.GOARCH,
+			}
+			index.Manifests = append(index.Manifests, desc)
+
+			return nil
 		}
 
-		metaData, err := json.Marshal(meta)
-		if err != nil {
-			return fmt.Errorf("failed to marshal metadata: %w", err)
-		}
-
-		metaReader := bytes.NewReader(metaData)
-		desc, err := writeContent(ctx, client.ContentStore(), images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata", metaReader)
-		if err != nil {
+		if err := writeFileToCS(metaFileName, images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata"); err != nil {
 			return err
 		}
-		desc.Platform = &imagespec.Platform{
-			OS:           runtime.GOOS,
-			Architecture: runtime.GOARCH,
-		}
-		index.Manifests = append(index.Manifests, desc)
 
-		blobDesc, err := writeContent(ctx, client.contentStore, images.MediaTypeContainerd1LoheagnRRWContent, c.ID+"-rrw-content", blobReader)
-		if err != nil {
-			return err
-		}
-		desc.Platform = &imagespec.Platform{
-			OS:           runtime.GOOS,
-			Architecture: runtime.GOARCH,
-		}
-		index.Manifests = append(index.Manifests, blobDesc)
-
-		cp, err := ccr.UploadTar(checkpointID, file.Name())
-		if err != nil {
-			return err
-		}
-		cpData, err := json.Marshal(cp.ToMount())
-		if err != nil {
+		if err := writeFileToCS(blobFielName, images.MediaTypeContainerd1LoheagnRRWContent, c.ID+"-rrw-content"); err != nil {
 			return err
 		}
 
 		index.Annotations[labels.LabelCheckpointSandbox] = crSB
-		index.Annotations[labels.LabelCheckpointRWMountInfo] = string(cpData)
 
 		return nil
 	}

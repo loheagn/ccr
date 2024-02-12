@@ -6,7 +6,6 @@ import (
 	"context"
 	"io"
 	"log"
-	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -33,20 +32,14 @@ func getTarXattrs(h *tar.Header) map[string]string {
 type RRWRoot struct {
 	fs.Inode
 
-	tarFile string
+	tr *tar.Reader
 }
 
 // tarRoot implements NodeOnAdder
 var _ = (fs.NodeOnAdder)((*RRWRoot)(nil))
 
 func (r *RRWRoot) OnAdd(ctx context.Context) {
-	tarFile, err := os.Open(r.tarFile)
-	if err != nil {
-		log.Fatalf("Failed to open tar file: %v", err)
-	}
-	defer tarFile.Close()
-
-	tr := tar.NewReader(tarFile)
+	tr := r.tr
 
 	var longName *string
 	for {
@@ -120,7 +113,7 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			rf := &RRWInode{}
 			rf.Attr = attr
 			rf.Xattrs = xattrs
-			p.AddChild(base, r.NewPersistentInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
+			p.AddChild(base, r.NewInode(ctx, rf, fs.StableAttr{Mode: syscall.S_IFDIR}), false)
 		case tar.TypeFifo:
 			rf := &RRWInode{}
 			rf.Attr = attr
@@ -132,15 +125,15 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			rf.Attr.Size = 9
 			rf.Xattrs = xattrs
 			rf.Size = 9
-			p.AddChild(base, r.NewPersistentInode(ctx, rf, fs.StableAttr{}), false)
+			p.AddChild(base, r.NewInode(ctx, rf, fs.StableAttr{}), false)
 		default:
 			log.Printf("entry %q: unsupported type '%c'", hdr.Name, hdr.Typeflag)
 		}
 	}
 }
 
-func MountRRW(tarFile string, path string) error {
-	rrwRoot := &RRWRoot{tarFile: tarFile}
+func MountRRW(reader io.ReaderAt, path string) error {
+	rrwRoot := &RRWRoot{tr: tar.NewReader(&ReaderAtWrapper{r: reader})}
 
 	server, err := fs.Mount(path, rrwRoot, &fs.Options{})
 	if err != nil {

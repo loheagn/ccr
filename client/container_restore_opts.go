@@ -18,17 +18,16 @@ package client
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/samber/lo"
+
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/content"
 	"github.com/containerd/containerd/v2/images"
-	"github.com/containerd/containerd/v2/labels"
-	"github.com/containerd/containerd/v2/mount"
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
@@ -77,16 +76,22 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 
 		snapshotInfoLabels := make(map[string]string)
 
-		if mountInfo, ok := index.Annotations[labels.LabelCheckpointRWMountInfo]; ok {
-			m := mount.Mount{}
-			if err := json.Unmarshal([]byte(mountInfo), &m); err != nil {
-				return err
-			}
+		rrwMeta, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
+			return m.MediaType == images.MediaTypeContainerd1LoheagnRRWMetadata
+		})
+
+		if ok {
 			rwPath, err := os.MkdirTemp(restorePath, fmt.Sprintf("%s-", c.ID))
 			if err != nil {
 				return err
 			}
-			if err := rrw.MountRRW("/root/rrw-test/kk.tar", rwPath); err != nil {
+
+			metaReader, err := client.contentStore.ReaderAt(ctx, rrwMeta)
+			if err != nil {
+				return nil
+			}
+
+			if err := rrw.MountRRW(metaReader, rwPath); err != nil {
 				return err
 			}
 			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath

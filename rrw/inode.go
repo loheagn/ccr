@@ -98,6 +98,92 @@ func wrapInode[T RRWInodeType](inode T, inodeType InodeType) *InodeWrapper {
 	}
 }
 
+type FileInfo struct {
+	Size   uint64
+	Offset uint64
+}
+
+const (
+	dummyBlobContent = "empty-content"
+)
+
+var (
+	checkpointBasePath = os.Getenv("CCR_CHECKPOINT_RW_PATH")
+)
+
+func SplitTar(ctx context.Context, tarFileName string) (metaFileName, blobFileName string, err error) {
+	tarFile, err := os.Open(tarFileName)
+	if err != nil {
+		return "", "", err
+	}
+	defer tarFile.Close()
+
+	metaWriter, err := os.CreateTemp(checkpointBasePath, "meta-*")
+	if err != nil {
+		return "", "", err
+	}
+	defer metaWriter.Close()
+
+	blobWriter, err := os.CreateTemp(checkpointBasePath, "blob-*")
+	if err != nil {
+		return "", "", err
+	}
+	defer blobWriter.Close()
+
+	tr := tar.NewReader(tarFile)
+
+	metaTW := tar.NewWriter(metaWriter)
+
+	offset := uint64(0)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			// end of tar archive
+			break
+		}
+		if err != nil {
+			return "", "", fmt.Errorf("add: %w", err)
+		}
+
+		if tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag {
+			fileInfo := &FileInfo{
+				Size:   uint64(hdr.Size),
+				Offset: offset,
+			}
+			offset += fileInfo.Size
+			fileInfoData, err := json.Marshal(fileInfo)
+			if err != nil {
+				return "", "", fmt.Errorf("json marshal: %w", err)
+			}
+
+			// generate new tar header
+			newHDr := *hdr
+			newHDr.Size = int64(len(fileInfoData))
+
+			if err := metaTW.WriteHeader(&newHDr); err != nil {
+				return "", "", err
+			}
+			if _, err := metaTW.Write(fileInfoData); err != nil {
+				return "", "", err
+			}
+
+			if _, err := io.CopyN(blobWriter, tr, int64(hdr.Size)); err != nil {
+				return "", "", err
+			}
+		} else {
+			if err := metaTW.WriteHeader(hdr); err != nil {
+				return "", "", err
+			}
+			if hdr.Size != 0 {
+				io.CopyN(metaWriter, tr, int64(hdr.Size))
+			}
+		}
+
+	}
+
+	return metaWriter.Name(), blobWriter.Name(), metaTW.Close()
+}
+
 func TarToRRWLayers(ctx context.Context, tarFileName string) (*RRWMeta, io.Reader, error) {
 	tarFile, err := os.Open(tarFileName)
 	if err != nil {
@@ -163,12 +249,15 @@ func TarToRRWLayers(ctx context.Context, tarFileName string) (*RRWMeta, io.Reade
 			rf := &RRWInode{}
 			rf.Attr = attr
 			rf.Xattrs = xattrs
+			rf.TarType = hdr.Typeflag
+
 			inode = wrapInode(rf, InodeTypeRRW)
 
 		case tar.TypeReg, tar.TypeRegA:
 			rf := &RRWInode{}
 			rf.Attr = attr
 			rf.Xattrs = xattrs
+			rf.TarType = hdr.Typeflag
 
 			rf.Size = rf.Attr.Size
 			rf.Offset = offset
@@ -176,6 +265,7 @@ func TarToRRWLayers(ctx context.Context, tarFileName string) (*RRWMeta, io.Reade
 			blobReadWriter.Write(buf.Bytes())
 
 			inode = wrapInode(rf, InodeTypeRRW)
+
 		default:
 			log.Printf("entry %q: unsupported type '%c'", hdr.Name, hdr.Typeflag)
 		}
