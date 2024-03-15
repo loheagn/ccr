@@ -2,26 +2,51 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"log"
 	"os"
-	"os/signal"
-	"syscall"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/cilium/ebpf/ringbuf"
 	"github.com/cilium/ebpf/rlimit"
+	"github.com/containerd/containerd/v2/cio"
+	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/mount"
+	"github.com/containerd/containerd/v2/namespaces"
+	"github.com/containerd/containerd/v2/oci"
+	"github.com/containerd/containerd/v2/pkg/cleanup"
+	"github.com/containerd/continuity/fs"
 	"golang.org/x/sys/unix"
 )
 
 //go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target arm64 -type event bpf ./ebpf/kprobe.c
 
-func main() {
-	// Subscribe to signals for terminating the program.
-	stopper := make(chan os.Signal, 1)
-	signal.Notify(stopper, os.Interrupt, syscall.SIGTERM)
+func uniquePart() string {
+	t := time.Now()
+	var b [3]byte
+	// Ignore read failures, just decreases uniqueness
+	rand.Read(b[:])
+	return fmt.Sprintf("%d-%s", t.Nanosecond(), base64.URLEncoding.EncodeToString(b[:]))
+}
+
+type Config struct {
+	imageName string
+	startCmd  string
+	initCmd   string
+	execCmd   string
+}
+
+func loadEBPF(stopChan <-chan struct{}) {
 
 	// Allow the current process to lock memory for eBPF resources.
 	if err := rlimit.RemoveMemlock(); err != nil {
@@ -77,7 +102,7 @@ func main() {
 	// Close the reader when the process receives a signal, which will exit
 	// the read loop.
 	go func() {
-		<-stopper
+		<-stopChan
 
 		if err := rd.Close(); err != nil {
 			log.Fatalf("closing ringbuf reader: %s", err)
@@ -111,5 +136,187 @@ func main() {
 		}
 
 		log.Printf("pid: %d\t\tcomm: %s\tinode: %d\tpos: %d\tret: %d\n", event.Pid, comm, event.Inode, event.Pos, event.Ret)
+	}
+}
+
+func execCmdInContainer(ctx context.Context, container containerd.Container, spec *oci.Spec, execCmd string) {
+	// 获得容器的任务，用于执行命令
+	task, err := container.Task(ctx, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 准备执行的命令和参数
+	execID := uniquePart()
+
+	// 准备标准输入输出
+	cioOpts := cio.NewCreator(cio.WithStdio)
+
+	pspec := spec.Process
+	pspec.Args = []string{"bash", "-c", execCmd}
+
+	// 在容器中创建一个新的进程并附加标准输入输出
+	process, err := task.Exec(ctx, execID, pspec, cioOpts)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 启动这个进程
+	if err := process.Start(ctx); err != nil {
+		log.Fatal(err)
+	}
+
+	// 等待进程结束
+	statusC, err := process.Wait(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// 输出进程的退出状态
+	status := <-statusC
+	code, _, err := status.Result()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("Process exited with status code %d", code)
+
+	// 清理进程资源
+	exitStatus, err := process.Delete(ctx)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if exitStatus.Error() != nil || exitStatus.ExitCode() != 0 {
+		log.Fatalf("exit with %#v when exec %s", exitStatus, execCmd)
+	}
+}
+
+func layerDiff(ctx context.Context, client *containerd.Client, container containerd.Container) []string {
+	c, err := client.ContainerService().Get(ctx, container.ID())
+	if err != nil {
+		panic(err)
+	}
+
+	sn := client.SnapshotService(c.Snapshotter)
+	info, err := sn.Stat(ctx, c.SnapshotKey)
+	if err != nil {
+		panic(err)
+	}
+
+	lowerKey := fmt.Sprintf("%s-parent-view-%s", info.Parent, uniquePart())
+	lower, err := sn.View(ctx, lowerKey, info.Parent)
+	if err != nil {
+		panic(err)
+	}
+	defer cleanup.Do(ctx, func(ctx context.Context) {
+		sn.Remove(ctx, lowerKey)
+	})
+
+	root, err := sn.Mounts(ctx, c.SnapshotKey)
+	if err != nil {
+		panic(err)
+	}
+
+	pathList := make([]string, 0)
+
+	handleChange := func(k fs.ChangeKind, p string, f os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if k == fs.ChangeKindDelete || k == fs.ChangeKindUnmodified ||
+			!f.Mode().IsRegular() {
+			return nil
+		}
+
+		name := p
+		if strings.HasPrefix(name, string(filepath.Separator)) {
+			name, err = filepath.Rel(string(filepath.Separator), name)
+			if err != nil {
+				panic(fmt.Errorf("failed to make path relative: %w", err))
+			}
+		}
+		// Canonicalize to POSIX-style paths using forward slashes. Directory
+		// entries must end with a slash.
+		name = filepath.ToSlash(name)
+		if f.IsDir() && !strings.HasSuffix(name, "/") {
+			name += "/"
+		}
+		pathList = append(pathList, name)
+
+		return nil
+	}
+
+	if err := mount.WithTempMount(ctx, lower, func(lowerRoot string) error {
+		return mount.WithReadonlyTempMount(ctx, root, func(upperRoot string) error {
+			return fs.Changes(ctx, lowerRoot, upperRoot, handleChange)
+		})
+	}); err != nil {
+		panic(err)
+	}
+
+	return pathList
+}
+
+func runAndMonitor(conf *Config) {
+	// TODO use containerd library to run container
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("nerdctl -n default run -d %s %s", conf.imageName, conf.startCmd))
+	containerIDBytes, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(err)
+	}
+	containerID := string(containerIDBytes)
+	containerID = strings.TrimSuffix(containerID, "\n")
+	defer func(containerID string) {
+		cmd := exec.Command("bash", "-c", fmt.Sprintf("nerdctl -n default rm -f %s", containerID))
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			panic(string(output) + " " + err.Error())
+		}
+	}(containerID)
+	log.Printf("start container %s\n", containerID)
+
+	// 创建新的客户端，假设 containerd 的 socket 文件在默认的位置
+	client, err := containerd.New("/run/containerd/containerd.sock")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer client.Close()
+
+	// 创建一个新的上下文对象
+	ctx := namespaces.WithNamespace(context.Background(), "default")
+
+	// 通过容器的ID或名字获取容器对象
+	container, err := client.LoadContainer(ctx, containerID)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	spec, err := container.Spec(ctx)
+	if err != nil {
+		panic(err)
+	}
+
+	execCmdInContainer(ctx, container, spec, conf.initCmd)
+
+	pathList := layerDiff(ctx, client, container)
+
+	fmt.Printf("%s\n", pathList)
+
+}
+
+func main() {
+	configList := []*Config{
+		{
+			imageName: "ubuntu",
+			startCmd:  "sleep inf",
+			initCmd:   "apt update && apt-get install neofetch -y",
+			execCmd:   "neofetch",
+		},
+	}
+
+	for _, conf := range configList {
+		runAndMonitor(conf)
 	}
 }
