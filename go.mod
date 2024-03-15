@@ -1,8 +1,8 @@
 module github.com/containerd/containerd/v2
 
-go 1.21
+go 1.21.0
 
-toolchain go1.21.6
+toolchain go1.22.1
 
 require (
 	dario.cat/mergo v1.0.0
@@ -100,7 +100,7 @@ require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.2.1 // indirect
 	github.com/cespare/xxhash/v2 v2.2.0 // indirect
-	github.com/cilium/ebpf v0.11.0 // indirect
+	github.com/cilium/ebpf v0.13.2
 	github.com/containerd/containerd v1.7.8 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
 	github.com/emicklei/go-restful/v3 v3.11.0 // indirect
