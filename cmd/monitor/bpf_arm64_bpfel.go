@@ -13,12 +13,14 @@ import (
 )
 
 type bpfEvent struct {
-	Pid   uint32
-	_     [4]byte
-	Inode uint64
-	Pos   int64
-	Ret   uint64
-	Comm  [80]uint8
+	Pid     uint32
+	_       [4]byte
+	Inode   uint64
+	Pos     int64
+	Ret     uint64
+	IsWrite bool
+	Comm    [80]uint8
+	_       [7]byte
 }
 
 // loadBpf returns the embedded CollectionSpec for bpf.
@@ -62,10 +64,18 @@ type bpfSpecs struct {
 //
 // It can be passed ebpf.CollectionSpec.Assign.
 type bpfProgramSpecs struct {
-	KernelRead    *ebpf.ProgramSpec `ebpf:"kernel_read"`
-	KernelRetRead *ebpf.ProgramSpec `ebpf:"kernel_ret_read"`
-	VfsRead       *ebpf.ProgramSpec `ebpf:"vfs_read"`
-	VfsRetRead    *ebpf.ProgramSpec `ebpf:"vfs_ret_read"`
+	KernelRead     *ebpf.ProgramSpec `ebpf:"kernel_read"`
+	KernelReadRet  *ebpf.ProgramSpec `ebpf:"kernel_read_ret"`
+	KernelWrite    *ebpf.ProgramSpec `ebpf:"kernel_write"`
+	VfsIterRead    *ebpf.ProgramSpec `ebpf:"vfs_iter_read"`
+	VfsIterReadRet *ebpf.ProgramSpec `ebpf:"vfs_iter_read_ret"`
+	VfsIterWrite   *ebpf.ProgramSpec `ebpf:"vfs_iter_write"`
+	VfsRead        *ebpf.ProgramSpec `ebpf:"vfs_read"`
+	VfsReadRet     *ebpf.ProgramSpec `ebpf:"vfs_read_ret"`
+	VfsReadv       *ebpf.ProgramSpec `ebpf:"vfs_readv"`
+	VfsReadvRet    *ebpf.ProgramSpec `ebpf:"vfs_readv_ret"`
+	VfsWrite       *ebpf.ProgramSpec `ebpf:"vfs_write"`
+	VfsWritev      *ebpf.ProgramSpec `ebpf:"vfs_writev"`
 }
 
 // bpfMapSpecs contains maps before they are loaded into the kernel.
@@ -110,18 +120,34 @@ func (m *bpfMaps) Close() error {
 //
 // It can be passed to loadBpfObjects or ebpf.CollectionSpec.LoadAndAssign.
 type bpfPrograms struct {
-	KernelRead    *ebpf.Program `ebpf:"kernel_read"`
-	KernelRetRead *ebpf.Program `ebpf:"kernel_ret_read"`
-	VfsRead       *ebpf.Program `ebpf:"vfs_read"`
-	VfsRetRead    *ebpf.Program `ebpf:"vfs_ret_read"`
+	KernelRead     *ebpf.Program `ebpf:"kernel_read"`
+	KernelReadRet  *ebpf.Program `ebpf:"kernel_read_ret"`
+	KernelWrite    *ebpf.Program `ebpf:"kernel_write"`
+	VfsIterRead    *ebpf.Program `ebpf:"vfs_iter_read"`
+	VfsIterReadRet *ebpf.Program `ebpf:"vfs_iter_read_ret"`
+	VfsIterWrite   *ebpf.Program `ebpf:"vfs_iter_write"`
+	VfsRead        *ebpf.Program `ebpf:"vfs_read"`
+	VfsReadRet     *ebpf.Program `ebpf:"vfs_read_ret"`
+	VfsReadv       *ebpf.Program `ebpf:"vfs_readv"`
+	VfsReadvRet    *ebpf.Program `ebpf:"vfs_readv_ret"`
+	VfsWrite       *ebpf.Program `ebpf:"vfs_write"`
+	VfsWritev      *ebpf.Program `ebpf:"vfs_writev"`
 }
 
 func (p *bpfPrograms) Close() error {
 	return _BpfClose(
 		p.KernelRead,
-		p.KernelRetRead,
+		p.KernelReadRet,
+		p.KernelWrite,
+		p.VfsIterRead,
+		p.VfsIterReadRet,
+		p.VfsIterWrite,
 		p.VfsRead,
-		p.VfsRetRead,
+		p.VfsReadRet,
+		p.VfsReadv,
+		p.VfsReadvRet,
+		p.VfsWrite,
+		p.VfsWritev,
 	)
 }
 
