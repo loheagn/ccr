@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"os/exec"
@@ -27,7 +28,7 @@ import (
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/oci"
 	"github.com/containerd/containerd/v2/pkg/cleanup"
-	"github.com/containerd/continuity/fs"
+	cfs "github.com/containerd/continuity/fs"
 	"github.com/samber/lo"
 	"golang.org/x/sys/unix"
 )
@@ -43,10 +44,11 @@ func uniquePart() string {
 }
 
 type Config struct {
-	imageName string
-	startCmd  string
-	initCmd   string
-	execCmd   string
+	runCmd               string
+	initCmd              string
+	execCmd              string
+	extraVolumes         []string
+	extraVolumeNotCreate map[string]string
 }
 
 type Range struct {
@@ -88,6 +90,10 @@ func (u UsageRecord) Usage() uint64 {
 				currentE = e
 			}
 		}
+	}
+
+	if currentE == 0 {
+		return 0
 	}
 
 	allLen += (currentE - currentS + 1)
@@ -315,12 +321,12 @@ func layerDiff(ctx context.Context, client *containerd.Client, container contain
 
 	pathList := make([]string, 0)
 
-	handleChange := func(k fs.ChangeKind, p string, f os.FileInfo, err error) error {
+	handleChange := func(k cfs.ChangeKind, p string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
 
-		if k == fs.ChangeKindDelete || k == fs.ChangeKindUnmodified ||
+		if k == cfs.ChangeKindDelete || k == cfs.ChangeKindUnmodified ||
 			!f.Mode().IsRegular() {
 			return nil
 		}
@@ -338,14 +344,19 @@ func layerDiff(ctx context.Context, client *containerd.Client, container contain
 		if f.IsDir() && !strings.HasSuffix(name, "/") {
 			name += "/"
 		}
-		pathList = append(pathList, name)
+		fullPath := fmt.Sprintf(
+			"/run/containerd/io.containerd.runtime.v2.task/default/%s/rootfs/%s",
+			container.ID(),
+			name,
+		)
+		pathList = append(pathList, fullPath)
 
 		return nil
 	}
 
 	if err := mount.WithTempMount(ctx, lower, func(lowerRoot string) error {
 		return mount.WithReadonlyTempMount(ctx, root, func(upperRoot string) error {
-			return fs.Changes(ctx, lowerRoot, upperRoot, handleChange)
+			return cfs.Changes(ctx, lowerRoot, upperRoot, handleChange)
 		})
 	}); err != nil {
 		panic(err)
@@ -356,7 +367,27 @@ func layerDiff(ctx context.Context, client *containerd.Client, container contain
 
 func runAndMonitor(conf *Config) {
 	// TODO use containerd library to run container
-	cmd := exec.Command("bash", "-c", fmt.Sprintf("nerdctl -n default run -d %s %s", conf.imageName, conf.startCmd))
+	extraLoaclPaths := []string{}
+	notDelete := map[string]bool{}
+	mountStr := ""
+	for _, volume := range conf.extraVolumes {
+		if localPath, ok := conf.extraVolumeNotCreate[volume]; ok {
+			extraLoaclPaths = append(extraLoaclPaths, localPath)
+			notDelete[localPath] = true
+			continue
+		}
+		dir, err := os.MkdirTemp("/root/morv", "")
+		if err != nil {
+			panic(err)
+		}
+		dir, err = filepath.Abs(dir)
+		if err != nil {
+			panic(err)
+		}
+		extraLoaclPaths = append(extraLoaclPaths, dir)
+		mountStr += fmt.Sprintf("-v %s:%s ", dir, volume)
+	}
+	cmd := exec.Command("bash", "-c", fmt.Sprintf("nerdctl run %s %s", mountStr, conf.runCmd))
 	containerIDBytes, err := cmd.CombinedOutput()
 	if err != nil {
 		panic(err)
@@ -368,6 +399,12 @@ func runAndMonitor(conf *Config) {
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			panic(string(output) + " " + err.Error())
+		}
+		for _, path := range extraLoaclPaths {
+			if notDelete[path] {
+				continue
+			}
+			os.RemoveAll(path)
 		}
 	}(containerID)
 	log.Printf("start container %s\n", containerID)
@@ -397,23 +434,31 @@ func runAndMonitor(conf *Config) {
 
 	pathList := layerDiff(ctx, client, container)
 
+	for _, path := range extraLoaclPaths {
+		filepath.Walk(path, func(path string, info fs.FileInfo, err error) error {
+			if info.Mode().IsRegular() {
+				pathList = append(pathList, path)
+			}
+			return nil
+		})
+	}
+
 	fmt.Printf("%s\n", pathList)
 
 	inoUsageMap := make(map[uint64]UsageRecord, len(pathList))
 
 	lo.ForEach(pathList, func(path string, _ int) {
-		fullPath := fmt.Sprintf(
-			"/run/containerd/io.containerd.runtime.v2.task/default/%s/rootfs/%s",
-			containerID,
-			path,
-		)
-		fileInfo, err := os.Stat(fullPath)
+		fileInfo, err := os.Stat(path)
 		if err != nil {
+			if os.IsNotExist(err) {
+				log.Printf("file not exist %s", path)
+				return
+			}
 			panic(err)
 		}
 		stat, ok := fileInfo.Sys().(*syscall.Stat_t)
 		if !ok {
-			log.Fatalf("not a unix.Stat_t %s", fullPath)
+			log.Fatalf("not a unix.Stat_t %s", path)
 		}
 
 		inoUsageMap[stat.Ino] = UsageRecord{
@@ -430,13 +475,14 @@ func runAndMonitor(conf *Config) {
 		loadEBPF(stopChan, continueChan, inoUsageMap)
 	}()
 	defer func() {
-		time.Sleep(5 * time.Second)
 		stopChan <- struct{}{}
 	}()
 
 	<-continueChan
 
 	execCmdInContainer(ctx, container, spec, conf.execCmd)
+
+	time.Sleep(5 * time.Second)
 }
 
 func main() {
@@ -453,11 +499,47 @@ func main() {
 		// 	initCmd:   "apt update && apt install neofetch -y",
 		// 	execCmd:   "apt update && neofetch",
 		// },
+		// {
+		// 	imageName: "ubuntu",
+		// 	startCmd:  "sleep inf",
+		// 	initCmd:   "cp /etc/passwd /root/passwd",
+		// 	execCmd:   "echo kk > /root/passwd",
+		// },
+		// {
+		// 	runCmd:       "-d -p 3306:3306 -e MYSQL_ROOT_PASSWORD=123456 mysql:8.3.0",
+		// 	extraVolumes: []string{"/var/lib/mysql"},
+		// 	initCmd:      "echo 1",
+		// 	execCmd:      "echo 1",
+		// },
+		// {
+		// 	runCmd:       "-d -p 27017:27017 mongo:7.0.7",
+		// 	extraVolumes: []string{"/data/db", "/data/configdb"},
+		// 	initCmd:      "echo 1",
+		// 	execCmd:      "echo 1",
+		// },
+		// {
+		// 	runCmd:       "-d ubuntu:22.04 sleep inf",
+		// 	extraVolumes: []string{},
+		// 	initCmd:      "apt update && apt-get install build-essential -y",
+		// 	execCmd:      "apt-get install vim gdb -y",
+		// },
+		// {
+		// 	runCmd:       "-d -v /root/redis-test/java-test:/root openjdk:23-slim-bullseye sleep inf",
+		// 	extraVolumes: []string{"/root"},
+		// 	extraVolumeNotCreate: map[string]string{
+		// 		"/root": "/root/redis-test/java-test",
+		// 	},
+		// 	initCmd: "echo 1",
+		// 	execCmd: "echo 1",
+		// },
 		{
-			imageName: "ubuntu",
-			startCmd:  "sleep inf",
-			initCmd:   "cp /etc/passwd /root/passwd",
-			execCmd:   "echo kk > /root/passwd",
+			runCmd:       "-d -v /root/redis-test/nodejs-test:/root -p 3000:3000 node:21-bullseye sleep inf",
+			extraVolumes: []string{"/root"},
+			extraVolumeNotCreate: map[string]string{
+				"/root": "/root/redis-test/nodejs-test",
+			},
+			initCmd: "echo 1",
+			execCmd: "echo 1",
 		},
 	}
 
