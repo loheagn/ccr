@@ -3,6 +3,8 @@ package rrw
 import (
 	"archive/tar"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -54,7 +56,8 @@ func (r *RRWInode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrO
 
 // Read implements fs.NodeReader.
 func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	_, err := r.reader.RangeRead(dest, uint64(off))
+	length := min(uint64(len(dest)), r.Attr.Size-uint64(off))
+	_, err := r.reader.RangeRead(dest, uint64(off), length)
 	if err != nil {
 		return nil, syscall.Errno(fuse.EREMOTEIO)
 	}
@@ -68,6 +71,11 @@ func (*RRWInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuse
 
 type FileInfo struct {
 	Size   uint64
+	Chunks []*FileChunkInfo
+}
+
+type FileChunkInfo struct {
+	Key    string
 	Offset uint64
 }
 
@@ -110,11 +118,15 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName, blobFileNa
 		}
 
 		if tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag {
+			chunks, err := writeByChunks(blobWriter, tr, offset, int64(hdr.Size))
+			if err != nil {
+				return "", "", err
+			}
 			fileInfo := &FileInfo{
 				Size:   uint64(hdr.Size),
-				Offset: offset,
+				Chunks: chunks,
 			}
-			offset += fileInfo.Size
+			offset += uint64(len(chunks)) * BLOCK_SIZE
 			fileInfoData, err := json.Marshal(fileInfo)
 			if err != nil {
 				return "", "", fmt.Errorf("json marshal: %w", err)
@@ -130,10 +142,6 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName, blobFileNa
 			if _, err := metaTW.Write(fileInfoData); err != nil {
 				return "", "", err
 			}
-
-			if _, err := io.CopyN(blobWriter, tr, int64(hdr.Size)); err != nil {
-				return "", "", err
-			}
 		} else {
 			if err := metaTW.WriteHeader(hdr); err != nil {
 				return "", "", err
@@ -146,4 +154,63 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName, blobFileNa
 	}
 
 	return metaWriter.Name(), blobWriter.Name(), metaTW.Close()
+}
+
+func writeByChunks(w io.Writer, r io.Reader, offset uint64, size int64) ([]*FileChunkInfo, error) {
+	chunkList := make([]*FileChunkInfo, 0)
+	buf := make([]byte, BLOCK_SIZE) // 创建一个4KB的缓冲区
+	readAndWrite := func(maxSize int) error {
+		n, err := io.ReadFull(r, buf[:maxSize]) // 从reader读取数据到缓冲区
+		if err != nil {
+			return err
+		}
+
+		if n < BLOCK_SIZE {
+			// 如果读取的数据少于4KB，使用0填充剩余的部分
+			for i := n; i < len(buf); i++ {
+				buf[i] = 0
+			}
+		}
+
+		hash := sha256.Sum256(buf)
+		key := hex.EncodeToString(hash[:])
+
+		_, err = w.Write(buf)
+		if err != nil {
+			return err
+		}
+
+		chunk := &FileChunkInfo{
+			Key:    key,
+			Offset: offset,
+		}
+		chunkList = append(chunkList, chunk)
+
+		offset += BLOCK_SIZE
+
+		return nil
+	}
+
+	chunkCnt := int(size / BLOCK_SIZE)
+	for i := 0; i < chunkCnt; i++ {
+		err := readAndWrite(BLOCK_SIZE)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	last := size % BLOCK_SIZE
+	if last == 0 {
+		return chunkList, nil
+	}
+
+	err := readAndWrite(int(last))
+	if err != nil && err != io.EOF {
+		return nil, err
+	}
+
+	return chunkList, nil
 }

@@ -15,6 +15,11 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
+const (
+	BLOCK_SIZE = 4096
+	CACHE_PATH = "/var/rrw/blocks"
+)
+
 func getTarXattrs(h *tar.Header) map[string]string {
 	re := h.Xattrs
 	if re == nil {
@@ -131,7 +136,7 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 				continue
 			}
 
-			rf.reader = NewDefaultRangeReader(r.blobDigest, fileInfo.Offset)
+			rf.reader = NewDefaultRangeReader(r.blobDigest, fileInfo.Chunks)
 			rf.Attr = attr
 			rf.Attr.Size = fileInfo.Size
 			rf.Xattrs = xattrs
