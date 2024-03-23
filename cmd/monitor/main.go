@@ -248,7 +248,7 @@ func execCmdInContainer(ctx context.Context, container containerd.Container, spe
 	}
 
 	// 准备执行的命令和参数
-	execID := uniquePart()
+	execID := "some-id"
 
 	// 准备标准输入输出
 	cioOpts := cio.NewCreator(cio.WithStdio)
@@ -532,13 +532,18 @@ func main() {
 		// 	initCmd: "echo 1",
 		// 	execCmd: "echo 1",
 		// },
+		// {
+		// 	runCmd:       "-d -v /root/redis-test/nodejs-test:/root -p 3000:3000 node:21-bullseye sleep inf",
+		// 	extraVolumes: []string{"/root"},
+		// 	extraVolumeNotCreate: map[string]string{
+		// 		"/root": "/root/redis-test/nodejs-test",
+		// 	},
+		// 	initCmd: "echo 1",
+		// 	execCmd: "echo 1",
+		// },
 		{
-			runCmd:       "-d -v /root/redis-test/nodejs-test:/root -p 3000:3000 node:21-bullseye sleep inf",
-			extraVolumes: []string{"/root"},
-			extraVolumeNotCreate: map[string]string{
-				"/root": "/root/redis-test/nodejs-test",
-			},
-			initCmd: "echo 1",
+			runCmd:  "-d -v /root/redis-test/pytorch-test:/home/ubuntu/pytorch-test armswdev/pytorch-arm-neoverse:r24.02-torch-2.2.0-rc8-openblas sleep inf",
+			initCmd: "cp /home/ubuntu/pytorch-test/* /home/ubuntu/",
 			execCmd: "echo 1",
 		},
 	}
@@ -546,22 +551,4 @@ func main() {
 	for _, conf := range configList {
 		runAndMonitor(conf)
 	}
-
-	// inoUsageMap := map[uint64]UsageRecord{
-	// 	302561: {
-	// 		size: 8,
-	// 	},
-	// }
-	// continueChan := make(chan struct{})
-	// stopChan := make(chan struct{})
-
-	// go func() {
-	// 	loadEBPF(stopChan, continueChan, inoUsageMap)
-	// }()
-	// defer func() {
-	// 	time.Sleep(5 * time.Second)
-	// 	stopChan <- struct{}{}
-	// }()
-
-	// <-continueChan
 }
