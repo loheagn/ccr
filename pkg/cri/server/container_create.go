@@ -237,6 +237,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	if needRestore {
 		opts = []containerd.NewContainerOpts{
 			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex),
+			containerd.WithRestoreRW(ctx, id, c.client, checkpoint, checkpointIndex),
 		}
 	} else {
 		opts = []containerd.NewContainerOpts{

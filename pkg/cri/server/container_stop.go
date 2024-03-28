@@ -260,7 +260,7 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 	opts := []containerd.CheckpointOpts{
 		containerd.WithCheckpointRuntime,
 		containerd.WithCheckpointImage,
-		containerd.WithExportCheckpointRW(crSB, cp.ID),
+		containerd.WithCheckpointRW,
 		containerd.WithCheckpointTask,
 	}
 
