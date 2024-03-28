@@ -174,10 +174,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	}
 
 	var volumeMounts []*runtime.Mount
-	if !c.config.IgnoreImageDefinedVolumes {
-		// Create container image volumes mounts.
-		volumeMounts = c.volumeMounts(platform, containerRootDir, config, &image.ImageSpec.Config)
-	} else if len(image.ImageSpec.Config.Volumes) != 0 {
+	if len(image.ImageSpec.Config.Volumes) != 0 {
 		log.G(ctx).Debugf("Ignoring volumes defined in image %v because IgnoreImageDefinedVolumes is set", image.ID)
 	}
 
