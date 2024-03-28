@@ -161,7 +161,7 @@ func (l *local) Create(ctx context.Context, r *api.CreateTaskRequest, _ ...grpc.
 	}
 	// jump get checkpointPath from checkpoint image
 	if checkpointPath == "" && r.Checkpoint != nil {
-		checkpointPath, err = os.MkdirTemp(os.Getenv("XDG_RUNTIME_DIR"), "ctrd-checkpoint")
+		checkpointPath, err = os.MkdirTemp("/root/criu-restore", r.ContainerID+"-ctrd-checkpoint")
 		if err != nil {
 			return nil, err
 		}
@@ -536,7 +536,7 @@ func (l *local) Checkpoint(ctx context.Context, r *api.CheckpointTaskRequest, _ 
 	checkpointImageExists := false
 	if image == "" {
 		checkpointImageExists = true
-		image, err = os.MkdirTemp(os.Getenv("XDG_RUNTIME_DIR"), "ctrd-checkpoint")
+		image, err = os.MkdirTemp("/root/criu-checkpoint", r.ContainerID+"-ctrd-checkpoint")
 		if err != nil {
 			return nil, errdefs.ToGRPC(err)
 		}
