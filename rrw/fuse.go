@@ -50,6 +50,10 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 	tr := r.tr
 
 	var longName *string
+
+	hardLinkMap := map[string]string{}
+	pNodeMap := map[string]*fs.Inode{}
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -105,7 +109,8 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			p.AddChild(base, r.NewPersistentInode(ctx, l, fs.StableAttr{Mode: syscall.S_IFLNK}), false)
 
 		case tar.TypeLink:
-			log.Println("don't know how to handle Typelink")
+			hardLinkMap[hdr.Name] = hdr.Linkname
+			pNodeMap[hdr.Name] = p
 
 		case tar.TypeChar:
 			rf := &RRWInode{}
@@ -141,9 +146,22 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			rf.Attr.Size = fileInfo.Size
 			rf.Xattrs = xattrs
 			p.AddChild(base, r.NewInode(ctx, rf, fs.StableAttr{}), false)
+
+			pNodeMap[hdr.Name] = p
 		default:
 			log.Printf("entry %q: unsupported type '%c'", hdr.Name, hdr.Typeflag)
 		}
+	}
+
+	for targetPath, path := range hardLinkMap {
+		targetDirNode := pNodeMap[targetPath]
+		pathDirNode := pNodeMap[path]
+		if targetDirNode == nil || pathDirNode == nil {
+			continue
+		}
+		baseName := filepath.Base(path)
+		inode := pathDirNode.GetChild(baseName)
+		targetDirNode.AddChild(filepath.Base(targetPath), inode, false)
 	}
 }
 
