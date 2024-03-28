@@ -42,22 +42,19 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	}
 	blockPath := fmt.Sprintf("%s/%s", CACHE_PATH, b.key)
 	if _, err := os.Stat(blockPath); err != nil {
-		if os.IsNotExist(err) {
-			// read and create the block
-			buf, err := registry.GetBlobRange(b.blobKey, b.offsetInBlob, BLOCK_SIZE)
-			if err != nil {
-				return 0, err
-			}
-			fileBuf := make([]byte, BLOCK_SIZE)
-			copy(fileBuf, buf)
-			if err := os.MkdirAll(CACHE_PATH, 0755); err != nil {
-				return 0, err
-			}
-			if err := os.WriteFile(blockPath, fileBuf, 0644); err != nil {
-				return 0, err
-			}
+		// read and create the block
+		buf, err := registry.GetBlobRange(b.blobKey, b.offsetInBlob, BLOCK_SIZE)
+		if err != nil {
+			return 0, err
 		}
-		return 0, err
+		fileBuf := make([]byte, BLOCK_SIZE)
+		copy(fileBuf, buf)
+		if err := os.MkdirAll(CACHE_PATH, 0755); err != nil {
+			return 0, err
+		}
+		if err := os.WriteFile(blockPath, fileBuf, 0644); err != nil {
+			return 0, err
+		}
 	}
 
 	blockFile, err := os.Open(blockPath)

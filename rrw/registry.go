@@ -16,7 +16,7 @@ func NewRegistry() *Registry {
 	client, err := reggie.NewClient(
 		registryHost,
 		reggie.WithDefaultName(registryNamespace),
-		reggie.WithInsecureSkipTLSVerify(false),
+		reggie.WithInsecureSkipTLSVerify(true),
 	)
 	if err != nil {
 		panic(err)
