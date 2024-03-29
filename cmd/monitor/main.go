@@ -33,7 +33,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target arm64 -type event bpf ./ebpf/kprobe.c
+//go:generate go run github.com/cilium/ebpf/cmd/bpf2go -target amd64 -type event bpf ./ebpf/kprobe.c
 
 func uniquePart() string {
 	t := time.Now()
@@ -524,25 +524,25 @@ func main() {
 		// 	execCmd:      "apt-get install vim gdb -y",
 		// },
 		// {
-		// 	runCmd:       "-d -v /root/redis-test/java-test:/root openjdk:23-slim-bullseye sleep inf",
+		// 	runCmd:       "-d -v /root/ccr-test/java-test:/root openjdk:23-slim-bullseye sleep inf",
 		// 	extraVolumes: []string{"/root"},
 		// 	extraVolumeNotCreate: map[string]string{
-		// 		"/root": "/root/redis-test/java-test",
+		// 		"/root": "/root/ccr-test/java-test",
 		// 	},
 		// 	initCmd: "echo 1",
 		// 	execCmd: "echo 1",
 		// },
 		// {
-		// 	runCmd:       "-d -v /root/redis-test/nodejs-test:/root -p 3000:3000 node:21-bullseye sleep inf",
+		// 	runCmd:       "-d -v /root/ccr-test/nodejs-test:/root -p 3000:3000 node:21-bullseye sleep inf",
 		// 	extraVolumes: []string{"/root"},
 		// 	extraVolumeNotCreate: map[string]string{
-		// 		"/root": "/root/redis-test/nodejs-test",
+		// 		"/root": "/root/ccr-test/nodejs-test",
 		// 	},
 		// 	initCmd: "echo 1",
 		// 	execCmd: "echo 1",
 		// },
 		{
-			runCmd:  "-d -v /root/redis-test/pytorch-test:/home/ubuntu/pytorch-test armswdev/pytorch-arm-neoverse:r24.02-torch-2.2.0-rc8-openblas sleep inf",
+			runCmd:  "-d -v /root/ccr-test/pytorch-test:/home/ubuntu/pytorch-test armswdev/pytorch-arm-neoverse:r24.02-torch-2.2.0-rc8-openblas sleep inf",
 			initCmd: "cp /home/ubuntu/pytorch-test/* /home/ubuntu/",
 			execCmd: "echo 1",
 		},

@@ -180,9 +180,9 @@ func main() {
 	http.HandleFunc(endpoint.UploadTar, uploadTar)
 	http.HandleFunc(endpoint.CommitCheckpoint, commitCheckpoint)
 
-	// Starting the server on port 8080.
-	fmt.Println("Server is running on port 8080...")
-	err := http.ListenAndServe(":8080", nil)
+	// Starting the server on port 8000.
+	fmt.Println("Server is running on port 8000...")
+	err := http.ListenAndServe(":8000", nil)
 	if err != nil {
 		fmt.Println("Error starting server: ", err)
 	}
