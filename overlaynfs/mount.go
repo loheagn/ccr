@@ -5,15 +5,19 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"syscall"
 
 	"github.com/fsnotify/fsnotify"
 )
 
 const BaseDir = "/var/overlaynfs"
 
-func GetNFSDir(sbID string) (string, error) {
+var usedMap = map[string]bool{}
+
+func GetNFSDir(sbID string, create bool) (string, error) {
 	dir := filepath.Join("/mnt/nfs_client/", sbID)
+	if !create {
+		return dir, nil
+	}
 	err := os.MkdirAll(dir, 0755)
 	if err != nil {
 		return "", err
@@ -71,43 +75,38 @@ func backgroundCopy(nfsDir, lazyStoreDir, activeDir string) {
 	done <- true
 }
 
-func Mount(sbID, contaienrID string) (string, error) {
+func Mount(sbID, contaienrID string) ([]string, error) {
 	baseDir := filepath.Join(BaseDir, contaienrID)
 	if err := os.MkdirAll(baseDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
-	nfsDir, err := GetNFSDir(sbID)
+	nfsDir, err := GetNFSDir(sbID, true)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	lazyStoreDir := filepath.Join(baseDir, "lazy-store")
 	if err := os.MkdirAll(lazyStoreDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
 
 	activeDir := filepath.Join(baseDir, "active")
 	if err := os.MkdirAll(activeDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
 	activeWorkDir := filepath.Join(baseDir, "active-work")
 	if err := os.MkdirAll(activeWorkDir, 0755); err != nil {
-		return "", err
+		return nil, err
 	}
 
-	opts := fmt.Sprintf("lowerdir=%s:%s,upperdir=%s,workdir=%s", lazyStoreDir, nfsDir, activeDir, activeWorkDir)
-
-	mountPoint := filepath.Join(baseDir, "mount")
-	if err := os.MkdirAll(mountPoint, 0755); err != nil {
-		return "", err
+	if id := sbID + "," + contaienrID; !usedMap[id] {
+		usedMap[id] = true
+		go backgroundCopy(nfsDir, lazyStoreDir, activeDir)
 	}
 
-	err = syscall.Mount("overlay", mountPoint, "overlay", 0, opts)
-	if err != nil {
-		return "", fmt.Errorf("failed to mount overlay: %w", err)
-	}
-
-	go backgroundCopy(nfsDir, lazyStoreDir, activeDir)
-
-	return mountPoint, nil
+	return []string{
+		fmt.Sprintf("lowerdir=%s:%s", lazyStoreDir, nfsDir),
+		fmt.Sprintf("upperdir=%s", activeDir),
+		fmt.Sprintf("workdir=%s", activeWorkDir),
+	}, nil
 }
