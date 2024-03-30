@@ -13,6 +13,7 @@ struct event {
     size_t ret;
     bool is_write;
     u8 comm[80];
+    u8 name[80];
 };
 
 static struct event zero_value = {};
@@ -30,12 +31,12 @@ struct {
     __type(value, struct event);
 } entries SEC(".maps");
 
-// static void get_file_path(struct file *file, char *buf, size_t size) {
-//     struct qstr dname;
+static void get_file_path(struct file *file, char *buf, size_t size) {
+    struct qstr dname;
 
-//     dname = BPF_CORE_READ(file, f_path.dentry, d_name);
-//     bpf_probe_read_kernel(buf, 80, dname.name);
-// }
+    dname = BPF_CORE_READ(file, f_path.dentry, d_name);
+    bpf_probe_read_kernel(buf, 80, dname.name);
+}
 
 // Force emitting struct event into the ELF.
 const struct event *unused __attribute__((unused));
@@ -79,6 +80,9 @@ int probe_ret(struct pt_regs *ctx) {
     task_info->pos = old_task_info->pos;
     task_info->is_write = false;
     bpf_get_current_comm(&task_info->comm, 80);
+
+    struct file *file = (struct file *)PT_REGS_PARM1(ctx);
+    get_file_path(file, &task_info->name, 80);
 
     bpf_ringbuf_submit(task_info, 0);
 

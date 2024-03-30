@@ -1,0 +1,1 @@
+fio --name=readtest --rw=read --bs=4k --size=1G --numjobs=1 --time_based --runtime=30 --filename=/mnt/mybtrfs/bigfile.img --ioengine=libaio --direct=1
