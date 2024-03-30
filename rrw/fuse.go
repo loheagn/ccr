@@ -16,8 +16,9 @@ import (
 )
 
 const (
-	BLOCK_SIZE = 4096
-	CACHE_PATH = "/var/rrw/blocks"
+	BLOCK_SIZE           = 4096
+	SMALL_FILE_TYPE byte = 'o'
+	CACHE_PATH           = "/var/rrw/blocks"
 )
 
 func getTarXattrs(h *tar.Header) map[string]string {
@@ -145,9 +146,23 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			rf.Attr = attr
 			rf.Attr.Size = fileInfo.Size
 			rf.Xattrs = xattrs
+			rf.name = hdr.Name
 			p.AddChild(base, r.NewInode(ctx, rf, fs.StableAttr{}), false)
-
 			pNodeMap[hdr.Name] = p
+			rf.reader.BackgroundCopy()
+
+		case SMALL_FILE_TYPE:
+			rf := &RRWInode{}
+			bs := buf.Bytes()
+			fileBuf := make([]byte, len(bs))
+			copy(fileBuf, bs)
+			rf.buf = fileBuf
+			rf.Attr = attr
+			rf.Xattrs = xattrs
+			rf.name = hdr.Name
+			p.AddChild(base, r.NewPersistentInode(ctx, rf, fs.StableAttr{}), false)
+			pNodeMap[hdr.Name] = p
+
 		default:
 			log.Printf("entry %q: unsupported type '%c'", hdr.Name, hdr.Typeflag)
 		}

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -28,6 +29,10 @@ type RRWInode struct {
 	fs.Inode
 
 	reader RangeReader
+
+	buf []byte
+
+	name string
 
 	Attr   fuse.Attr
 	Xattrs map[string]string
@@ -56,6 +61,16 @@ func (r *RRWInode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrO
 
 // Read implements fs.NodeReader.
 func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
+	timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+	fmt.Println(timeStr, "loheagnttt", r.name, off, len(dest))
+	if len(r.buf) > 0 {
+		end := int(off) + len(dest)
+		if end > len(r.buf) {
+			end = len(r.buf)
+		}
+		return fuse.ReadResultData(r.buf[off:end]), 0
+	}
+
 	length := min(uint64(len(dest)), r.Attr.Size-uint64(off))
 	_, err := r.reader.RangeRead(dest, uint64(off), length)
 	if err != nil {
@@ -65,7 +80,9 @@ func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off i
 }
 
 // Open implements fs.NodeOpener.
-func (*RRWInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+func (r *RRWInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
+	timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+	fmt.Println(timeStr, "loheagnttt", r.name)
 	return nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
@@ -117,40 +134,46 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName, blobFileNa
 			return "", "", fmt.Errorf("add: %w", err)
 		}
 
-		if tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag {
-			chunks, err := writeByChunks(blobWriter, tr, offset, int64(hdr.Size))
-			if err != nil {
-				return "", "", err
+		if hdr.Size < BLOCK_SIZE || !(tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag) {
+			if tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag {
+				hdr.Typeflag = SMALL_FILE_TYPE
 			}
-			fileInfo := &FileInfo{
-				Size:   uint64(hdr.Size),
-				Chunks: chunks,
-			}
-			offset += uint64(len(chunks)) * BLOCK_SIZE
-			fileInfoData, err := json.Marshal(fileInfo)
-			if err != nil {
-				return "", "", fmt.Errorf("json marshal: %w", err)
-			}
-
-			// generate new tar header
-			newHDr := *hdr
-			newHDr.Size = int64(len(fileInfoData))
-
-			if err := metaTW.WriteHeader(&newHDr); err != nil {
-				return "", "", err
-			}
-			if _, err := metaTW.Write(fileInfoData); err != nil {
-				return "", "", err
-			}
-		} else {
 			if err := metaTW.WriteHeader(hdr); err != nil {
 				return "", "", err
 			}
 			if hdr.Size != 0 {
-				io.CopyN(metaWriter, tr, int64(hdr.Size))
+				n, err := io.CopyN(metaTW, tr, int64(hdr.Size))
+				if err != nil {
+					return "", "", fmt.Errorf("copy %d bytes to metaTW: %w", n, err)
+				}
 			}
+			continue
 		}
 
+		chunks, err := writeByChunks(blobWriter, tr, offset, int64(hdr.Size))
+		if err != nil {
+			return "", "", err
+		}
+		fileInfo := &FileInfo{
+			Size:   uint64(hdr.Size),
+			Chunks: chunks,
+		}
+		offset += uint64(len(chunks)) * BLOCK_SIZE
+		fileInfoData, err := json.Marshal(fileInfo)
+		if err != nil {
+			return "", "", fmt.Errorf("json marshal: %w", err)
+		}
+
+		// generate new tar header
+		newHDr := *hdr
+		newHDr.Size = int64(len(fileInfoData))
+
+		if err := metaTW.WriteHeader(&newHDr); err != nil {
+			return "", "", err
+		}
+		if _, err := metaTW.Write(fileInfoData); err != nil {
+			return "", "", err
+		}
 	}
 
 	return metaWriter.Name(), blobWriter.Name(), metaTW.Close()
