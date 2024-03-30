@@ -233,7 +233,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	// Set snapshotter before any other options.
 	if needRestore {
 		opts = []containerd.NewContainerOpts{
-			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex),
+			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex, checkpointModel.Sandbox),
 		}
 	} else {
 		opts = []containerd.NewContainerOpts{

@@ -21,7 +21,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 
 	tasks "github.com/containerd/containerd/v2/api/services/tasks/v1"
@@ -33,7 +32,6 @@ import (
 	"github.com/containerd/containerd/v2/protobuf"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	"github.com/containerd/containerd/v2/rootfs"
-	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/containerd/v2/runtime/v2/runc/options"
 	"github.com/opencontainers/go-digest"
 	imagespec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -157,68 +155,14 @@ func WithCheckpointRW(ctx context.Context, client *Client, c *containers.Contain
 }
 
 func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
-	checkpointBasePath := os.Getenv("CCR_CHECKPOINT_RW_PATH")
-	if checkpointBasePath == "" {
-		checkpointBasePath = "/var/lib/temp"
-	}
 	return func(ctx context.Context, client *Client, c *containers.Container, index *imagespec.Index, copts *options.CheckpointOptions) error {
-		file, err := os.CreateTemp(checkpointBasePath, "origin-tar-*")
-		if err != nil {
-			return err
-		}
-		defer os.Remove(file.Name())
 
 		if err := rootfs.CreateDiffAndWrite(ctx,
 			c.SnapshotKey,
 			client.SnapshotService(c.Snapshotter),
 			client.DiffService(),
-			file,
+			crSB,
 		); err != nil {
-			return err
-		}
-
-		metaFileName, blobFielName, err := rrw.SplitTar(ctx, file.Name())
-		if err != nil {
-			return fmt.Errorf("failed to split tar: %w", err)
-		}
-		defer func() {
-			os.Remove(metaFileName)
-			os.Remove(blobFielName)
-		}()
-
-		writeFileToCS := func(filename string, mediaType, ref string) error {
-			fileStat, err := os.Stat(filename)
-			if err != nil {
-				return err
-			}
-			if fileStat.Size() == 0 {
-				return nil
-			}
-
-			fileReader, err := os.Open(filename)
-			if err != nil {
-				return err
-			}
-			defer fileReader.Close()
-
-			desc, err := writeContent(ctx, client.ContentStore(), mediaType, ref, fileReader)
-			if err != nil {
-				return err
-			}
-			desc.Platform = &imagespec.Platform{
-				OS:           runtime.GOOS,
-				Architecture: runtime.GOARCH,
-			}
-			index.Manifests = append(index.Manifests, desc)
-
-			return nil
-		}
-
-		if err := writeFileToCS(metaFileName, images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata"); err != nil {
-			return err
-		}
-
-		if err := writeFileToCS(blobFielName, images.MediaTypeContainerd1LoheagnRRWContent, c.ID+"-rrw-content"); err != nil {
 			return err
 		}
 

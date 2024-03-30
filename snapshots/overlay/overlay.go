@@ -27,6 +27,7 @@ import (
 	"syscall"
 
 	"github.com/containerd/containerd/v2/mount"
+	"github.com/containerd/containerd/v2/overlaynfs"
 	"github.com/containerd/containerd/v2/snapshots"
 	"github.com/containerd/containerd/v2/snapshots/overlay/overlayutils"
 	"github.com/containerd/containerd/v2/snapshots/storage"
@@ -619,11 +620,25 @@ func (o *snapshotter) mounts(s storage.Snapshot, info snapshots.Info) []mount.Mo
 		}
 	}
 
-	parentPaths := make([]string, 0, len(s.ParentIDs))
+	if nfsMount, ok := info.Labels[snapshots.LabelSnapshotExtraRWPath]; ok {
+		list := strings.Split(nfsMount, ",")
+		sbID, containerID := list[0], list[1]
+		opts, err := overlaynfs.Mount(sbID, containerID)
+		if err != nil {
+			fmt.Println(err.Error())
+		}
 
-	if rwPath, ok := info.Labels[snapshots.LabelSnapshotExtraRWPath]; ok {
-		parentPaths = append(parentPaths, rwPath)
+		options = append(options, opts...)
+		return []mount.Mount{
+			{
+				Type:    "overlay",
+				Source:  "overlay",
+				Options: options,
+			},
+		}
 	}
+
+	parentPaths := make([]string, 0, len(s.ParentIDs))
 
 	for i := range s.ParentIDs {
 		parentPaths = append(parentPaths, o.upperPath(s.ParentIDs[i]))

@@ -19,11 +19,12 @@ package rootfs
 import (
 	"context"
 	"fmt"
-	"io"
+	"os/exec"
+	"path/filepath"
 
-	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/diff"
 	"github.com/containerd/containerd/v2/mount"
+	"github.com/containerd/containerd/v2/overlaynfs"
 	"github.com/containerd/containerd/v2/pkg/cleanup"
 	"github.com/containerd/containerd/v2/snapshots"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -68,7 +69,7 @@ func CreateDiff(ctx context.Context, snapshotID string, sn snapshots.Snapshotter
 	return d.Compare(ctx, lower, upper, opts...)
 }
 
-func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Snapshotter, d diff.Comparer, writer io.WriteCloser) error {
+func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Snapshotter, d diff.Comparer, sbID string) error {
 	info, err := sn.Stat(ctx, snapshotID)
 	if err != nil {
 		return err
@@ -102,8 +103,13 @@ func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Sna
 
 	return mount.WithTempMount(ctx, lower, func(lowerRoot string) error {
 		return mount.WithReadonlyTempMount(ctx, upper, func(upperRoot string) error {
-			if errOpen := archive.WriteDiff(ctx, writer, lowerRoot, upperRoot); errOpen != nil {
-				return fmt.Errorf("failed to write diff: %w", errOpen)
+			nfsDir, err := overlaynfs.GetNFSDir(sbID, false)
+			if err != nil {
+				return err
+			}
+			err = exec.Command("bash", "-c", fmt.Sprintf("rsync -a %s/ %s/", filepath.Clean(upperRoot), nfsDir)).Run()
+			if err != nil {
+				return err
 			}
 			return nil
 		})

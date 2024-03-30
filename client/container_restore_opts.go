@@ -20,10 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
-
-	"github.com/samber/lo"
 
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/content"
@@ -31,7 +28,6 @@ import (
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
-	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/containerd/v2/snapshots"
 	"github.com/containerd/typeurl/v2"
 	"github.com/opencontainers/image-spec/identity"
@@ -52,8 +48,7 @@ var (
 type RestoreOpts func(context.Context, string, *Client, Image, *imagespec.Index) NewContainerOpts
 
 // WithRestoreImage restores the image for the container
-func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint Image, index *imagespec.Index) NewContainerOpts {
-	restorePath := os.Getenv("CCR_RESTORE_RW_PATH")
+func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint Image, index *imagespec.Index, sbID string) NewContainerOpts {
 	return func(ctx context.Context, client *Client, c *containers.Container) error {
 		name, ok := index.Annotations[checkpointImageNameLabel]
 		if !ok || name == "" {
@@ -76,34 +71,8 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 
 		snapshotInfoLabels := make(map[string]string)
 
-		rrwMeta, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
-			return m.MediaType == images.MediaTypeContainerd1LoheagnRRWMetadata
-		})
-
-		if ok {
-			rwPath, err := os.MkdirTemp(restorePath, fmt.Sprintf("%s-", c.ID))
-			if err != nil {
-				return err
-			}
-
-			metaReader, err := client.contentStore.ReaderAt(ctx, rrwMeta)
-			if err != nil {
-				return nil
-			}
-
-			rrwBlob, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
-				return m.MediaType == images.MediaTypeContainerd1LoheagnRRWContent
-			})
-
-			var rrwBlobDigest string
-			if ok {
-				rrwBlobDigest = rrwBlob.Digest.String()
-			}
-
-			if err := rrw.MountRRW(metaReader, rrwBlobDigest, rwPath); err != nil {
-				return err
-			}
-			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath
+		if sbID != "" {
+			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = sbID + "," + id
 		}
 
 		if _, err := client.SnapshotService(snapshotter).Prepare(ctx, id, parent, snapshots.WithLabels(snapshotInfoLabels)); err != nil {
