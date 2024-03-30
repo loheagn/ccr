@@ -257,6 +257,10 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 		return nil, err
 	}
 
+	if cp.Round > 1 {
+		return nil, nil
+	}
+
 	opts := []containerd.CheckpointOpts{
 		containerd.WithCheckpointRuntime,
 		containerd.WithCheckpointImage,

@@ -115,7 +115,7 @@ func getCheckpoint(w http.ResponseWriter, r *http.Request) {
 	}
 
 	got := model.Checkpoint{}
-	if err := db.Order("round desc").First(&got, "sandbox = ? AND container = ?", req.Sandbox, req.Container).Error; err != nil {
+	if err := db.Order("round desc").First(&got, "sandbox = ? AND container = ? and committed = ?", req.Sandbox, req.Container, true).Error; err != nil {
 		w.WriteHeader(http.StatusNotFound)
 		return
 	}
