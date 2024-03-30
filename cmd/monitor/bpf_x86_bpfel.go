@@ -20,6 +20,7 @@ type bpfEvent struct {
 	Ret     uint64
 	IsWrite bool
 	Comm    [80]uint8
+	Name    [80]uint8
 	_       [7]byte
 }
 
