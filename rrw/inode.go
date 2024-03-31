@@ -63,12 +63,17 @@ func (r *RRWInode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrO
 func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
 	fmt.Println(timeStr, "loheagnttt", r.name, off, len(dest))
+
 	if len(r.buf) > 0 {
 		end := int(off) + len(dest)
 		if end > len(r.buf) {
 			end = len(r.buf)
 		}
 		return fuse.ReadResultData(r.buf[off:end]), 0
+	}
+
+	if r.Attr.Size == 0 {
+		return fuse.ReadResultData(r.buf), 0
 	}
 
 	length := min(uint64(len(dest)), r.Attr.Size-uint64(off))
