@@ -41,8 +41,15 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	blockPath := filepath.Join(CACHE_PATH, b.key)
 
 	if _, err := os.Stat(blockPath); err != nil {
-		blockPath = filepath.Join(NFS_BLOCK_PATH, b.key)
-		go b.download()
+		remotePath := filepath.Join(NFS_BLOCK_PATH, b.key)
+		buf, err := os.ReadFile(remotePath)
+		if err != nil {
+			return 0, err
+		}
+		go safeWriteFile(buf, blockPath)
+
+		cnt := copy(dest[:realLen], buf[offset:offset+realLen])
+		return uint64(cnt), nil
 	}
 
 	blockFile, err := os.Open(blockPath)
