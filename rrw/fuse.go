@@ -16,9 +16,10 @@ import (
 )
 
 const (
-	BLOCK_SIZE           = 4096
+	BLOCK_SIZE           = 1024*1024
 	SMALL_FILE_TYPE byte = 'o'
 	CACHE_PATH           = "/var/rrw/blocks"
+	NFS_BLOCK_PATH = "/mnt/nfs_client/nfs_block"
 )
 
 func getTarXattrs(h *tar.Header) map[string]string {

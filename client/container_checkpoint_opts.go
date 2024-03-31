@@ -177,13 +177,12 @@ func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 			return err
 		}
 
-		metaFileName, blobFielName, err := rrw.SplitTar(ctx, file.Name())
+		metaFileName, err := rrw.SplitTar(ctx, file.Name())
 		if err != nil {
 			return fmt.Errorf("failed to split tar: %w", err)
 		}
 		defer func() {
 			os.Remove(metaFileName)
-			os.Remove(blobFielName)
 		}()
 
 		writeFileToCS := func(filename string, mediaType, ref string) error {
@@ -215,10 +214,6 @@ func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 		}
 
 		if err := writeFileToCS(metaFileName, images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata"); err != nil {
-			return err
-		}
-
-		if err := writeFileToCS(blobFielName, images.MediaTypeContainerd1LoheagnRRWContent, c.ID+"-rrw-content"); err != nil {
 			return err
 		}
 
