@@ -1,58 +1,75 @@
 package overlaynfs
 
 import (
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"syscall"
-	"time"
 )
 
-// copyFile copies a file from src to dst and preserves its file mode and timestamps.
-func copyFile(src, originDST string) error {
-	dst := originDST + ".loheagn.tmp"
+// copyFile copies the contents of the file and attempts to preserve the file mode, owner, and timestamps.
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
 
-	sourceFileStat, err := os.Stat(src)
+	sourceFileInfo, err := sourceFile.Stat()
 	if err != nil {
 		return err
 	}
 
-	if !sourceFileStat.Mode().IsRegular() {
-		return fmt.Errorf("%s is not a regular file", src)
-	}
-
-	source, err := os.Open(src)
+	destFile, err := os.OpenFile(dst, os.O_RDWR|os.O_CREATE|os.O_TRUNC, sourceFileInfo.Mode())
 	if err != nil {
 		return err
 	}
-	defer source.Close()
+	defer destFile.Close()
 
-	destination, err := os.Create(dst)
+	if _, err := io.Copy(destFile, sourceFile); err != nil {
+		return err
+	}
+
+	// Preserve the timestamps.
+	times := []syscall.Timespec{syscall.NsecToTimespec(sourceFileInfo.Sys().(*syscall.Stat_t).Atim.Nsec), syscall.NsecToTimespec(sourceFileInfo.Sys().(*syscall.Stat_t).Mtim.Nsec)}
+	if err := syscall.UtimesNano(dst, times); err != nil {
+		return err
+	}
+
+	// Preserve the owner.
+	if err := os.Chown(dst, int(sourceFileInfo.Sys().(*syscall.Stat_t).Uid), int(sourceFileInfo.Sys().(*syscall.Stat_t).Gid)); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// copySymlink attempts to create a new symlink that points to the resolved path of the src.
+func copySymlink(src, dst string) error {
+	linkTarget, err := os.Readlink(src)
 	if err != nil {
 		return err
 	}
-	defer destination.Close()
+	return os.Symlink(linkTarget, dst)
+}
 
-	if _, err := io.Copy(destination, source); err != nil {
+// copyEntry determines if the provided path is a file or a symlink and copies it accordingly.
+func copyEntry(src, dst string) error {
+	info, err := os.Lstat(src)
+	if err != nil {
 		return err
 	}
 
-	// Set the permissions
-	if err := os.Chmod(dst, sourceFileStat.Mode()); err != nil {
-		return err
+	switch mode := info.Mode(); {
+	case mode.IsRegular():
+		return copyFile(src, dst)
+	case mode&os.ModeSymlink != 0:
+		return copySymlink(src, dst)
+	case mode.IsDir():
+		return os.Mkdir(dst, info.Mode())
+	default:
+		return nil // Skip other file types (e.g., named pipes, sockets, devices).
 	}
-
-	// Get the source file's access and modification times
-	atime := sourceFileStat.Sys().(*syscall.Stat_t).Atim
-	mtime := sourceFileStat.Sys().(*syscall.Stat_t).Mtim
-
-	// Set the destination file's access and modification times
-	if err := os.Chtimes(dst, time.Unix(atime.Sec, atime.Nsec), time.Unix(mtime.Sec, mtime.Nsec)); err != nil {
-		return err
-	}
-
-	return os.Rename(dst, originDST)
 }
 
 // copyDirRecursively copies the contents of the src directory to the dst directory.
@@ -85,12 +102,6 @@ func copyDirRecursively(src, dst string, fileChan chan string) error {
 
 		dstPath := filepath.Join(dst, relPath)
 
-		if info.IsDir() {
-			// Create the directory
-			return os.MkdirAll(dstPath, info.Mode())
-		} else {
-			// Copy the file
-			return copyFile(path, dstPath)
-		}
+		return copyEntry(path, dstPath)
 	})
 }
