@@ -1,9 +1,9 @@
 package rrw
 
 import (
-	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -14,14 +14,11 @@ type RangeReader interface {
 	BackgroundCopy()
 }
 
-var registry = NewRegistry()
-
 func NewDefaultRangeReader(blobKey string, chunks []*FileChunkInfo) RangeReader {
 	blockInfos := lo.Map(chunks, func(chunk *FileChunkInfo, _ int) *BlockInfo {
 		return &BlockInfo{
-			key:          chunk.Key,
-			blobKey:      blobKey,
-			offsetInBlob: chunk.Offset,
+			key:  chunk.Key,
+			size: chunk.Size,
 		}
 	})
 	return &DefaultRangeReader{
@@ -32,19 +29,20 @@ func NewDefaultRangeReader(blobKey string, chunks []*FileChunkInfo) RangeReader 
 var _ RangeReader = (*DefaultRangeReader)(nil)
 
 type BlockInfo struct {
-	key          string
-	blobKey      string
-	offsetInBlob uint64
+	key  string
+	size uint64
 }
 
 func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
-	realLen := min(length, BLOCK_SIZE-offset)
+	realLen := min(length, b.size-offset)
 	if realLen == 0 {
 		return 0, nil
 	}
-	blockPath := fmt.Sprintf("%s/%s", CACHE_PATH, b.key)
-	if err := b.download(); err != nil {
-		return 0, err
+	blockPath := filepath.Join(CACHE_PATH, b.key)
+
+	if _, err := os.Stat(blockPath); err != nil {
+		blockPath = filepath.Join(NFS_BLOCK_PATH, b.key)
+		go b.download()
 	}
 
 	blockFile, err := os.Open(blockPath)
@@ -66,27 +64,13 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 }
 
 func (b *BlockInfo) download() error {
-	blockPath := fmt.Sprintf("%s/%s", CACHE_PATH, b.key)
+	blockPath := filepath.Join(CACHE_PATH, b.key)
 	if _, err := os.Stat(blockPath); err == nil {
 		return nil
 	}
 
-	tmpID := uuid.NewString()
-	blockPathTmp := fmt.Sprintf("%s/%s.%s", CACHE_PATH, b.key, tmpID)
-	buf, err := registry.GetBlobRange(b.blobKey, b.offsetInBlob, BLOCK_SIZE)
-	if err != nil {
-		return err
-	}
-	fileBuf := make([]byte, BLOCK_SIZE)
-	copy(fileBuf, buf)
-	if err := os.MkdirAll(CACHE_PATH, 0755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(blockPathTmp, fileBuf, 0644); err != nil {
-		return err
-	}
-
-	return os.Rename(blockPathTmp, blockPath)
+	srcPath := filepath.Join(NFS_BLOCK_PATH, b.key)
+	return copyBetweenNFS(srcPath, blockPath)
 }
 
 type DefaultRangeReader struct {
@@ -128,4 +112,43 @@ func (r *DefaultRangeReader) RangeRead(dest []byte, offset, length uint64) (uint
 	}
 
 	return readCnt, nil
+}
+
+func copyBetweenNFS(src, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+
+	dstTmp := dst + "." + uuid.NewString()
+	buf, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	dir, _ := filepath.Split(dst)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dstTmp, buf, 0644); err != nil {
+		return err
+	}
+
+	return os.Rename(dstTmp, dst)
+}
+
+func safeWriteFile(buf []byte, dst string) error {
+	if _, err := os.Stat(dst); err == nil {
+		return nil
+	}
+
+	dstTmp := dst + "." + uuid.NewString()
+	dir, _ := filepath.Split(dst)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(dstTmp, buf, 0644); err != nil {
+		return err
+	}
+
+	return os.Rename(dstTmp, dst)
 }
