@@ -101,7 +101,7 @@ func Mount(sbID, contaienrID string) ([]string, error) {
 
 	if id := sbID + "," + contaienrID; !usedMap[id] {
 		usedMap[id] = true
-		go backgroundCopy(nfsDir, lazyStoreDir, activeDir)
+		// go backgroundCopy(nfsDir, lazyStoreDir, activeDir)
 	}
 
 	return []string{
