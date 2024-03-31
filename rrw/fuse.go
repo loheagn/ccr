@@ -196,3 +196,19 @@ func MountRRW(metaReader io.ReaderAt, blobDigest, path string) error {
 
 	return nil
 }
+
+func MountRRWV2(metaReader io.Reader, blobDigest, path string) error {
+	rrwRoot := &RRWRoot{
+		tr:         tar.NewReader(metaReader),
+		blobDigest: blobDigest,
+	}
+
+	server, err := fs.Mount(path, rrwRoot, &fs.Options{})
+	if err != nil {
+		return err
+	}
+
+	server.Wait()
+
+	return nil
+}
