@@ -1,6 +1,7 @@
 package rrw
 
 import (
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -33,6 +34,11 @@ type BlockInfo struct {
 	size uint64
 }
 
+var (
+	readFromRemoteSize = 0
+	readFromLocalSize  = 0
+)
+
 func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	realLen := min(length, b.size-offset)
 	if realLen == 0 {
@@ -40,7 +46,7 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	}
 	blockPath := filepath.Join(CACHE_PATH, b.key)
 
-	if _, err := os.Stat(blockPath); err != nil {
+	if stat, err := os.Stat(blockPath); err != nil {
 		remotePath := filepath.Join(NFS_BLOCK_PATH, b.key)
 		buf, err := os.ReadFile(remotePath)
 		if err != nil {
@@ -49,8 +55,19 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 		go safeWriteFile(buf, blockPath)
 
 		cnt := copy(dest[:realLen], buf[offset:offset+realLen])
+		fmt.Println(os.Getpid(), "read from remote")
+		readFromRemoteSize += len(buf)
 		return uint64(cnt), nil
+	} else {
+		readFromLocalSize += int(stat.Size())
+		fmt.Println(os.Getpid(), "read from local")
 	}
+
+	// ra := float64(0)
+	// if readFromLocalSize != 0 {
+	// 	ra = float64(readFromRemoteSize) / float64(readFromLocalSize + readFromRemoteSize)
+	// }
+	fmt.Println(os.Getpid(), "loheagn read local remote", readFromRemoteSize, readFromLocalSize, float64(readFromRemoteSize) / float64(readFromLocalSize + readFromRemoteSize))
 
 	blockFile, err := os.Open(blockPath)
 	if err != nil {
@@ -85,11 +102,11 @@ type DefaultRangeReader struct {
 }
 
 func (r *DefaultRangeReader) BackgroundCopy() {
-	go func() {
-		for _, b := range r.blockInfos {
-			b.download()
-		}
-	}()
+	// go func() {
+	// 	for _, b := range r.blockInfos {
+	// 		b.download()
+	// 	}
+	// }()
 }
 
 func (r *DefaultRangeReader) RangeRead(dest []byte, offset, length uint64) (uint64, error) {

@@ -10,16 +10,17 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 const (
-	BLOCK_SIZE           = 1024*1024
+	BLOCK_SIZE           = 1024 * 1024
 	SMALL_FILE_TYPE byte = 'o'
 	CACHE_PATH           = "/var/rrw/blocks"
-	NFS_BLOCK_PATH = "/mnt/nfs_client/nfs_block"
+	NFS_BLOCK_PATH       = "/mnt/nfs_client/nfs_block"
 )
 
 func getTarXattrs(h *tar.Header) map[string]string {
@@ -187,7 +188,12 @@ func MountRRW(metaReader io.ReaderAt, blobDigest, path string) error {
 		blobDigest: blobDigest,
 	}
 
-	server, err := fs.Mount(path, rrwRoot, &fs.Options{})
+	timeout := 60 * time.Minute
+	server, err := fs.Mount(path, rrwRoot, &fs.Options{
+		EntryTimeout:    &timeout,
+		AttrTimeout:     &timeout,
+		NegativeTimeout: &timeout,
+	})
 	if err != nil {
 		return err
 	}
@@ -202,8 +208,12 @@ func MountRRWV2(metaReader io.Reader, blobDigest, path string) error {
 		tr:         tar.NewReader(metaReader),
 		blobDigest: blobDigest,
 	}
-
-	server, err := fs.Mount(path, rrwRoot, &fs.Options{})
+	timeout := 60 * time.Minute
+	server, err := fs.Mount(path, rrwRoot, &fs.Options{
+		EntryTimeout:    &timeout,
+		AttrTimeout:     &timeout,
+		NegativeTimeout: &timeout,
+	})
 	if err != nil {
 		return err
 	}
