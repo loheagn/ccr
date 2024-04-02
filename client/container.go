@@ -334,7 +334,7 @@ func (c *container) Checkpoint(ctx context.Context, ref string, opts ...Checkpoi
 	}
 	copts := &options.CheckpointOptions{
 		Exit:                false,
-		OpenTcp:             false,
+		OpenTcp:             true,
 		ExternalUnixSockets: true,
 		Terminal:            false,
 		FileLocks:           true,

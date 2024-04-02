@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"time"
 
 	containerdio "github.com/containerd/containerd/v2/cio"
@@ -123,6 +124,8 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 		log.G(ctx).Errorf("failed to create task with checkpoint opt: %s", err.Error())
 	} else if opt != nil {
 		taskOpts = append(taskOpts, opt)
+		workPath, _ := os.MkdirTemp("/root/criu-work", "")
+		taskOpts = append(taskOpts, containerd.WithRestoreWorkPath(workPath))
 	}
 
 	task, err := container.NewTask(ctx, ioCreation, taskOpts...)

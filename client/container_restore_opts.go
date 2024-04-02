@@ -21,9 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"strings"
 
 	"github.com/samber/lo"
 
@@ -33,6 +31,7 @@ import (
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/containerd/v2/snapshots"
 	"github.com/containerd/typeurl/v2"
 	"github.com/opencontainers/image-spec/identity"
@@ -86,15 +85,23 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 			if err != nil {
 				return err
 			}
-
-			metaPath := strings.TrimPrefix(rrwMeta.Digest.String(), "sha256:")
-			mountCmd := exec.Command("/usr/local/bin/rrw", "/var/lib/containerd/io.containerd.content.v1.content/blobs/sha256/"+metaPath, rwPath)
-			mountCmd.Stdout = os.Stdout
-			mountCmd.Stderr = os.Stderr
-			if err := mountCmd.Start(); err != nil {
-				return err
+			metaReader, err := client.contentStore.ReaderAt(ctx, rrwMeta)
+			if err != nil {
+				return nil
 			}
 
+			rrwBlob, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
+				return m.MediaType == images.MediaTypeContainerd1LoheagnRRWContent
+			})
+
+			var rrwBlobDigest string
+			if ok {
+				rrwBlobDigest = rrwBlob.Digest.String()
+			}
+
+			if err := rrw.MountRRW(metaReader, rrwBlobDigest, rwPath); err != nil {
+				return err
+			}
 			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath
 		}
 

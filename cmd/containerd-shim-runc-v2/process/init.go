@@ -248,9 +248,11 @@ func (p *Init) openStdin(path string) error {
 func (p *Init) createCheckpointedState(r *CreateConfig, pidFile *pidFile) error {
 	opts := &runc.RestoreOpts{
 		CheckpointOpts: runc.CheckpointOpts{
-			ImagePath:  r.Checkpoint,
-			WorkDir:    p.CriuWorkPath,
-			ParentPath: r.ParentCheckpoint,
+			ImagePath:                r.Checkpoint,
+			WorkDir:                  p.CriuWorkPath,
+			ParentPath:               r.ParentCheckpoint,
+			AllowOpenTCP:             true,
+			AllowExternalUnixSockets: true,
 		},
 		PidFile:     pidFile.Path(),
 		NoPivot:     p.NoPivotRoot,

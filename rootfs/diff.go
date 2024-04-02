@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/diff"
@@ -74,14 +75,14 @@ func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Sna
 		return err
 	}
 
-	lowerKey := fmt.Sprintf("%s-parent-view-%s", info.Parent, uniquePart())
-	lower, err := sn.View(ctx, lowerKey, info.Parent)
-	if err != nil {
-		return err
-	}
-	defer cleanup.Do(ctx, func(ctx context.Context) {
-		sn.Remove(ctx, lowerKey)
-	})
+	// lowerKey := fmt.Sprintf("%s-parent-view-%s", info.Parent, uniquePart())
+	// lower, err := sn.View(ctx, lowerKey, info.Parent)
+	// if err != nil {
+	// 	return err
+	// }
+	// defer cleanup.Do(ctx, func(ctx context.Context) {
+	// 	sn.Remove(ctx, lowerKey)
+	// })
 
 	var upper []mount.Mount
 	if info.Kind == snapshots.KindActive {
@@ -100,13 +101,15 @@ func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Sna
 		})
 	}
 
-	return mount.WithTempMount(ctx, lower, func(lowerRoot string) error {
-		return mount.WithReadonlyTempMount(ctx, upper, func(upperRoot string) error {
-			if errOpen := archive.WriteDiff(ctx, writer, lowerRoot, upperRoot); errOpen != nil {
-				return fmt.Errorf("failed to write diff: %w", errOpen)
-			}
-			return nil
-		})
+	return mount.WithReadonlyTempMount(ctx, upper, func(upperRoot string) error {
+		emptyDir, err := os.MkdirTemp("/tmp", "")
+		if err != nil {
+			return fmt.Errorf("failed to create tmp dir when try do full diff: %w", err)
+		}
+		if errOpen := archive.WriteDiff(ctx, writer, emptyDir, upperRoot); errOpen != nil {
+			return fmt.Errorf("failed to write diff: %w", errOpen)
+		}
+		return nil
 	})
 
 }

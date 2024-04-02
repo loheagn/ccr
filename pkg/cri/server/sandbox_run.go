@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
@@ -31,6 +32,7 @@ import (
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
 	containerd "github.com/containerd/containerd/v2/client"
+	"github.com/containerd/containerd/v2/labels"
 	"github.com/containerd/containerd/v2/pkg/cri/annotations"
 	"github.com/containerd/containerd/v2/pkg/cri/bandwidth"
 	criconfig "github.com/containerd/containerd/v2/pkg/cri/config"
@@ -85,6 +87,44 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		err         error
 		sandboxInfo = sb.Sandbox{ID: id}
 	)
+
+	sbIPMap := map[string]string{
+		"cp-java-rrw-26-id-1": "172.22.0.36",
+		"cp-java-rrw-29-id-1": "172.22.0.44",
+		"cp-java-rrw-29-id-2": "172.22.0.45",
+		"cp-java-rrw-30-id-3": "172.22.0.47",
+		"cp-java-rrw-30-id-4": "172.22.0.48",
+		"cp-java-rrw-30-id-5": "172.22.0.49",
+	}
+	if crSB, ok := config.GetAnnotations()[labels.LabelCheckpointSandbox]; ok {
+		ip := sbIPMap[crSB]
+
+		content, err := os.ReadFile("/etc/podtoip")
+		if err != nil {
+			return nil, fmt.Errorf("failed to read /etc/podtoip: %w", err)
+		}
+
+		podtoip := make(map[string]string)
+
+		if len(content) > 0 {
+			err = json.Unmarshal(content, &podtoip)
+			if err != nil {
+				return nil, fmt.Errorf("failed to unmarshal /etc/podtoip: %w", err)
+			}
+		}
+
+		podtoip[id] = ip
+
+		jsonData, err := json.Marshal(podtoip)
+		if err != nil {
+			return nil, fmt.Errorf("error serializing map to JSON: %w", err)
+		}
+
+		err = os.WriteFile("/etc/podtoip", jsonData, 0644)
+		if err != nil {
+			return nil, fmt.Errorf("error writing JSON to file: %w", err)
+		}
+	}
 
 	ociRuntime, err := c.config.GetSandboxRuntime(config, r.GetRuntimeHandler())
 	if err != nil {

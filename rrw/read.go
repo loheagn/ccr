@@ -1,10 +1,9 @@
 package rrw
 
 import (
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/samber/lo"
@@ -35,9 +34,11 @@ type BlockInfo struct {
 }
 
 var (
-	readFromRemoteSize = 0
-	readFromLocalSize  = 0
+// readFromRemoteSize = 0
+// readFromLocalSize  = 0
 )
+
+var lru = NewLRUCache(20480, 5*time.Minute, nil)
 
 func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	realLen := min(length, b.size-offset)
@@ -46,45 +47,46 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	}
 	blockPath := filepath.Join(CACHE_PATH, b.key)
 
-	if stat, err := os.Stat(blockPath); err != nil {
+	tryBuf, ok := lru.Get(b.key)
+	if ok {
+		if buf, ok := tryBuf.([]byte); ok && buf != nil {
+			cnt := copy(dest[:realLen], buf[offset:offset+realLen])
+			return uint64(cnt), nil
+		}
+	}
+
+	if _, err := os.Stat(blockPath); err != nil {
 		remotePath := filepath.Join(NFS_BLOCK_PATH, b.key)
 		buf, err := os.ReadFile(remotePath)
 		if err != nil {
 			return 0, err
 		}
+		lru.Put(b.key, buf, 5*time.Second)
 		go safeWriteFile(buf, blockPath)
 
 		cnt := copy(dest[:realLen], buf[offset:offset+realLen])
-		fmt.Println(os.Getpid(), "read from remote")
-		readFromRemoteSize += len(buf)
+		// fmt.Println(os.Getpid(), "read from remote")
+		// readFromRemoteSize += len(buf)
 		return uint64(cnt), nil
 	} else {
-		readFromLocalSize += int(stat.Size())
-		fmt.Println(os.Getpid(), "read from local")
+		// readFromLocalSize += int(stat.Size())
+		// fmt.Println(os.Getpid(), "read from local")
 	}
 
 	// ra := float64(0)
 	// if readFromLocalSize != 0 {
 	// 	ra = float64(readFromRemoteSize) / float64(readFromLocalSize + readFromRemoteSize)
 	// }
-	fmt.Println(os.Getpid(), "loheagn read local remote", readFromRemoteSize, readFromLocalSize, float64(readFromRemoteSize) / float64(readFromLocalSize + readFromRemoteSize))
+	// fmt.Println(os.Getpid(), "loheagn read local remote", readFromRemoteSize, readFromLocalSize, float64(readFromRemoteSize)/float64(readFromLocalSize+readFromRemoteSize))
 
-	blockFile, err := os.Open(blockPath)
+	buf, err := os.ReadFile(blockPath)
 	if err != nil {
 		return 0, err
 	}
+	lru.Put(b.key, buf, 5*time.Second)
 
-	ret, err := blockFile.Seek(int64(offset), 0)
-	if ret != int64(offset) || err != nil {
-		return 0, err
-	}
-
-	readCnt, err := io.ReadFull(blockFile, dest[:realLen])
-	if err != nil && err != io.EOF {
-		return 0, err
-	}
-
-	return uint64(readCnt), nil
+	cnt := copy(dest[:realLen], buf[offset:offset+realLen])
+	return uint64(cnt), nil
 }
 
 func (b *BlockInfo) download() error {

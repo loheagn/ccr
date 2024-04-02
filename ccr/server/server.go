@@ -60,7 +60,7 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		round = got.Round + 1
 	}
 
-	ref := fmt.Sprintf("%s/%s:checkpoint-%s-%s-v%d", registryHost, registryNamespace, req.Sandbox, req.Container, round)
+	ref := fmt.Sprintf("%s/test/%s-2:checkpoint-%s-%s-v%d", registryHost, registryNamespace, req.Sandbox, req.Container, round)
 
 	newCheckpoint := &model.Checkpoint{
 		ID:        uuid.NewString(),
