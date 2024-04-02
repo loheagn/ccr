@@ -251,6 +251,8 @@ func (p *Init) createCheckpointedState(r *CreateConfig, pidFile *pidFile) error 
 			ImagePath:  r.Checkpoint,
 			WorkDir:    p.CriuWorkPath,
 			ParentPath: r.ParentCheckpoint,
+			AllowOpenTCP:             true,
+			AllowExternalUnixSockets: true,
 		},
 		PidFile:     pidFile.Path(),
 		NoPivot:     p.NoPivotRoot,

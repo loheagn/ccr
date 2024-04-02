@@ -97,6 +97,7 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		"cp-java-rrw-30-id-5": "172.22.0.49",
 
 		"cp-java-nfs-raw-2-id-1": "172.22.0.80",
+		"cp-java-nfs-raw-3-id-1": "172.22.0.81",
 	}
 	if crSB, ok := config.GetAnnotations()[labels.LabelCheckpointSandbox]; ok {
 		ip := sbIPMap[crSB]
