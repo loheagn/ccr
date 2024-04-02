@@ -52,7 +52,7 @@ func WithCheckpointImage(ctx context.Context, client *Client, c *containers.Cont
 
 	cs := client.ContentStore()
 
-	var target imagespec.Descriptor
+	var target imagespec.Descriptor = ir.Target
 	if manifests, err := images.Children(ctx, cs, ir.Target); err == nil && len(manifests) > 0 {
 		matcher := platforms.NewMatcher(platforms.DefaultSpec())
 		for _, manifest := range manifests {
