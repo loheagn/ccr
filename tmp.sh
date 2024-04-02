@@ -51,3 +51,5 @@ tc class add dev ens160 parent 1: classid 1:1 htb rate 1mbit
 
 # 应用一个过滤器，将标记为 1 的数据包定向到这个类
 tc filter add dev ens160 parent 1: protocol ip prio 1 handle 1 fw classid 1:1
+
+fio --name=readtest --rw=read --bs=4k --size=1G --numjobs=1 --time_based --runtime=30 --filename=/root/ccrrestore/b6d76331530d01446b4d4c91bcb0e6fb9482cc3df1f510ed1b0e3e9c832ed79c-2276110733/root/bigfile.img --ioengine=libaio --direct=1
