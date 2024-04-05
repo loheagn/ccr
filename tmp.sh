@@ -52,4 +52,12 @@ tc class add dev ens160 parent 1: classid 1:1 htb rate 1mbit
 # 应用一个过滤器，将标记为 1 的数据包定向到这个类
 tc filter add dev ens160 parent 1: protocol ip prio 1 handle 1 fw classid 1:1
 
-fio --name=readtest --rw=read --bs=4k --size=1G --numjobs=1 --time_based --runtime=30 --filename=/root/ccrrestore/b6d76331530d01446b4d4c91bcb0e6fb9482cc3df1f510ed1b0e3e9c832ed79c-2276110733/root/bigfile.img --ioengine=libaio --direct=1
+fio --name=readtest --rw=read --bs=4k --size=1G --numjobs=1 --time_based --runtime=30 --filename=/root/ccrrestore/71f43c99065ff342601e7b2834caac2b604e4083f23792008e59e3274235292c-4026208587/root/bigfile.img --ioengine=libaio --direct=1
+
+fio --name=readwritetest --eta-newline=5s --filename=testfile --rw=randwrite --size=500M --ioengine=libaio --direct=0 --numjobs=4 --runtime=60 --group_reporting --filename=/run/containerd/io.containerd.runtime.v2.task/k8s.io/a360323e7e56660d0d40c4a5e97cd5083891f7866cb907aff5ca68a44c9ce555/rootfs/root/bigfile.img
+
+
+fio --name=readtest --rw=read --bs=4k --size=1G --numjobs=1 --time_based --runtime=30 --filename=/mnt/nfs_client/bigfile.img --ioengine=libaio --direct=1
+
+fio --name=readwritetest --eta-newline=5s --filename=testfile --rw=randwrite --size=500M --ioengine=libaio --direct=1 --numjobs=4 --runtime=60 --group_reporting --filename=/root/overlay-test/merged/bigfile.img
+
