@@ -99,6 +99,22 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 		"cp-java-nfs-raw-2-id-1": "172.22.0.80",
 		"cp-java-nfs-raw-3-id-1": "172.22.0.81",
 	}
+
+	sbToIPMapContent, err := os.ReadFile("/etc/sbtoip")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read /etc/sbtoip: %w", err)
+	}
+
+	if len(sbToIPMapContent) > 0 {
+		oldMap := map[string]string{}
+		if err := json.Unmarshal(sbToIPMapContent, &oldMap); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal /etc/podtoip: %w", err)
+		}
+		for sbID, ip := range oldMap {
+			sbIPMap[sbID] = ip
+		}
+	}
+
 	if crSB, ok := config.GetAnnotations()[labels.LabelCheckpointSandbox]; ok {
 		ip := sbIPMap[crSB]
 
@@ -276,6 +292,25 @@ func (c *criService) RunPodSandbox(ctx context.Context, r *runtime.RunPodSandbox
 			return nil, fmt.Errorf("failed to setup network for sandbox %q: %w", id, err)
 		}
 		sandboxCreateNetworkTimer.UpdateSince(netStart)
+	}
+
+	if crSB, ok := config.GetAnnotations()[labels.LabelCheckpointSandbox]; ok {
+		sbIPMap[crSB] = sandbox.IP
+		bs, err := json.Marshal(sbIPMap)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal the map to json bytes: %w", err)
+		}
+
+		file, err := os.OpenFile("/etc/sbtoip", os.O_WRONLY|os.O_TRUNC|os.O_CREATE, 0666)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open file: %w", err)
+		}
+		defer file.Close()
+
+		n, err := file.Write(bs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to write %d content to /etc/sbtoip: %w", n, err)
+		}
 	}
 
 	if err := sandboxInfo.AddExtension(podsandbox.MetadataKey, &sandbox.Metadata); err != nil {
