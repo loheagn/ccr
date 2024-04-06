@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"syscall"
-	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
@@ -62,8 +61,8 @@ func (r *RRWInode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrO
 
 // Read implements fs.NodeReader.
 func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
-	timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-	fmt.Println(timeStr, "loheagnttt", r.name, off, len(dest))
+	// timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+	// fmt.Println(timeStr, "loheagnttt", r.name, off, len(dest))
 
 	if len(r.buf) > 0 {
 		end := int(off) + len(dest)
@@ -87,8 +86,8 @@ func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off i
 
 // Open implements fs.NodeOpener.
 func (r *RRWInode) Open(ctx context.Context, flags uint32) (fh fs.FileHandle, fuseFlags uint32, errno syscall.Errno) {
-	timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
-	fmt.Println(timeStr, "loheagnttt", r.name)
+	// timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
+	// fmt.Println(timeStr, "loheagnttt", r.name)
 	return nil, fuse.FOPEN_KEEP_CACHE, 0
 }
 
