@@ -2,14 +2,16 @@ package rrw
 
 import (
 	"archive/tar"
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
@@ -96,8 +98,59 @@ type FileInfo struct {
 	Chunks []*FileChunkInfo
 }
 
+func NewFileInfo(data []byte) (*FileInfo, error) {
+	buf := bytes.NewBuffer(data[:8])
+
+	size := uint64(0)
+	err := binary.Read(buf, binary.BigEndian, &size)
+	if err != nil {
+		return nil, err
+	}
+
+	chunks := make([]*FileChunkInfo, 0)
+	for i := 8; i < len(data); i += 40 {
+		hash := [32]byte{}
+		copy(hash[:], data[i:i+32])
+
+		buf := bytes.NewBuffer(data[i+32 : i+40])
+
+		size := uint64(0)
+		err := binary.Read(buf, binary.BigEndian, &size)
+		if err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, &FileChunkInfo{hash, size})
+	}
+
+	return &FileInfo{
+		Size:   size,
+		Chunks: chunks,
+	}, nil
+
+}
+
+func (f *FileInfo) ToBytes() ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	err := binary.Write(buf, binary.BigEndian, f.Size)
+	if err != nil {
+		return nil, err
+	}
+	for _, chunk := range f.Chunks {
+		_, err := buf.Write(chunk.Key[:])
+		if err != nil {
+			return nil, err
+		}
+		if err := binary.Write(buf, binary.BigEndian, chunk.Size); err != nil {
+			return nil, err
+		}
+	}
+
+	return buf.Bytes(), nil
+}
+
 type FileChunkInfo struct {
-	Key  string
+	Key  [32]byte
 	Size uint64
 }
 
@@ -121,6 +174,10 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName string, err
 	tr := tar.NewReader(tarFile)
 
 	metaTW := tar.NewWriter(metaWriter)
+
+	wg := &sync.WaitGroup{}
+
+	concurrencyLimit := make(chan struct{}, 20)
 
 	offset := uint64(0)
 	for {
@@ -149,7 +206,7 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName string, err
 			continue
 		}
 
-		chunks, err := writeByChunks(tr, offset, int64(hdr.Size))
+		chunks, err := writeByChunks(tr, offset, int64(hdr.Size), wg, concurrencyLimit)
 		if err != nil {
 			return "", err
 		}
@@ -158,9 +215,9 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName string, err
 			Chunks: chunks,
 		}
 		offset += uint64(len(chunks)) * BLOCK_SIZE
-		fileInfoData, err := json.Marshal(fileInfo)
+		fileInfoData, err := fileInfo.ToBytes()
 		if err != nil {
-			return "", fmt.Errorf("json marshal: %w", err)
+			return "", fmt.Errorf("write fileInfo to bytes: %w", err)
 		}
 
 		// generate new tar header
@@ -175,13 +232,16 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName string, err
 		}
 	}
 
+	wg.Wait()
+
 	return metaWriter.Name(), metaTW.Close()
 }
 
-func writeByChunks(r io.Reader, offset uint64, size int64) ([]*FileChunkInfo, error) {
+func writeByChunks(r io.Reader, offset uint64, size int64, wg *sync.WaitGroup, concurrencyLimit chan struct{}) ([]*FileChunkInfo, error) {
 	chunkList := make([]*FileChunkInfo, 0)
-	buf := make([]byte, BLOCK_SIZE) // 创建一个4KB的缓冲区
+	// buf := make([]byte, BLOCK_SIZE) // 创建一个4KB的缓冲区
 	readAndWrite := func(maxSize int) error {
+		buf := make([]byte, BLOCK_SIZE)         // 创建一个4KB的缓冲区
 		n, err := io.ReadFull(r, buf[:maxSize]) // 从reader读取数据到缓冲区
 		if err != nil {
 			return err
@@ -191,15 +251,27 @@ func writeByChunks(r io.Reader, offset uint64, size int64) ([]*FileChunkInfo, er
 
 		hash := sha256.Sum256(newBuf)
 		key := hex.EncodeToString(hash[:])
-		if err := safeWriteFile(newBuf, filepath.Join(NFS_BLOCK_PATH, key)); err != nil {
-			return err
-		}
+
+		// if err := safeWriteFile(newBuf, filepath.Join(NFS_BLOCK_PATH, key)); err != nil {
+		// 	return err
+		// }
 
 		chunk := &FileChunkInfo{
-			Key:  key,
+			Key:  hash,
 			Size: uint64(n),
 		}
 		chunkList = append(chunkList, chunk)
+
+		wg.Add(1)
+		concurrencyLimit <- struct{}{}
+		go func(buf []byte, key string) {
+			defer wg.Done()
+			defer func() {
+				<-concurrencyLimit
+			}()
+			safeWriteFile(buf, filepath.Join(NFS_BLOCK_PATH, key))
+		}(buf, key)
+
 		return nil
 	}
 

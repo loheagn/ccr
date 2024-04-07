@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"log"
 	"path/filepath"
@@ -17,10 +16,10 @@ import (
 )
 
 const (
-	BLOCK_SIZE           = 4096
-	SMALL_FILE_TYPE byte = 'o'
-	CACHE_PATH           = "/var/rrw/blocks"
-	NFS_BLOCK_PATH       = "/mnt/nfs_client/nfs_block"
+	BLOCK_SIZE              = 4096
+	SMALL_FILE_TYPE    byte = 'o'
+	CACHE_PATH              = "/var/rrw/blocks"
+	NFS_BLOCK_PATH          = "/mnt/nfs_client/nfs_block/"
 )
 
 func getTarXattrs(h *tar.Header) map[string]string {
@@ -138,8 +137,8 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 		case tar.TypeReg, tar.TypeRegA:
 			rf := &RRWInode{}
 
-			var fileInfo FileInfo
-			if err := json.Unmarshal(buf.Bytes(), &fileInfo); err != nil {
+			fileInfo, err := NewFileInfo(buf.Bytes())
+			if err != nil {
 				log.Printf("failed to unmarshal file info: %s", err.Error())
 				continue
 			}

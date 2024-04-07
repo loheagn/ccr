@@ -1,6 +1,7 @@
 package rrw
 
 import (
+	"encoding/hex"
 	"os"
 	"path/filepath"
 	"time"
@@ -17,7 +18,7 @@ type RangeReader interface {
 func NewDefaultRangeReader(blobKey string, chunks []*FileChunkInfo) RangeReader {
 	blockInfos := lo.Map(chunks, func(chunk *FileChunkInfo, _ int) *BlockInfo {
 		return &BlockInfo{
-			key:  chunk.Key,
+			key:  hex.EncodeToString(chunk.Key[:]),
 			size: chunk.Size,
 		}
 	})
