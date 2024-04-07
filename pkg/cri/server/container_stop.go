@@ -34,6 +34,7 @@ import (
 	ctrdutil "github.com/containerd/containerd/v2/pkg/cri/util"
 	"github.com/containerd/containerd/v2/platforms"
 	"github.com/containerd/containerd/v2/protobuf"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/log"
 
 	"github.com/moby/sys/signal"
@@ -104,6 +105,7 @@ func (c *criService) stopContainer(ctx context.Context, container containerstore
 	if err != nil {
 		log.G(ctx).Errorf("failed to get sandbox %s", sandboxID)
 	}
+	printUsage()
 	if crSB, ok := sandbox.Metadata.Config.GetAnnotations()[labels.LabelCheckpointSandbox]; ok {
 		_, err := c.checkpointContainerBeforeStop(ctx, container, task, crSB)
 		if err != nil {
@@ -308,4 +310,16 @@ func (c *criService) cleanupCheckpointStuff(ctx context.Context, image container
 		return err
 	}
 	return nil
+}
+
+func printUsage() {
+	rrw.Lock.Lock()
+	defer rrw.Lock.Unlock()
+	if usage :=rrw.Usage; len(usage) > 0 {
+		total := uint64(0)
+		for _, ranges := range usage {
+			total += rrw.MergeRanges(ranges)
+		}
+		fmt.Println("loheagn usage", total, rrw.Total)
+	}
 }

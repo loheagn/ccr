@@ -11,12 +11,59 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"syscall"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
+
+type Range struct {
+	start uint64
+	end   uint64
+}
+
+var Lock = sync.Mutex{}
+var Usage = map[string][]Range{}
+
+var Total int64
+
+func MergeRanges(records []Range) uint64 {
+	sort.Slice(records, func(i, j int) bool {
+		a, b := records[i], records[j]
+		if a.start == b.start {
+			return a.end < b.end
+		}
+		return a.start < b.start
+	})
+
+	allLen := uint64(0)
+	currentS, currentE := uint64(0), uint64(0)
+	for _, r := range records {
+		s, e := r.start, r.end
+		switch {
+		case s > currentE:
+			if currentE > currentS {
+				allLen += (currentE - currentS + 1)
+			}
+			currentS, currentE = s, e
+
+		case s <= currentE:
+			if e > currentE {
+				currentE = e
+			}
+		}
+	}
+
+	if currentE == 0 {
+		return 0
+	}
+
+	allLen += (currentE - currentS + 1)
+
+	return allLen
+}
 
 // headerToFileInfo fills a fuse.Attr struct from a tar.Header.
 func headerToFileInfo(out *fuse.Attr, h *tar.Header) {
@@ -65,6 +112,10 @@ func (r *RRWInode) Getattr(ctx context.Context, f fs.FileHandle, out *fuse.AttrO
 func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off int64) (fuse.ReadResult, syscall.Errno) {
 	// timeStr := time.Now().UTC().Format("2006-01-02T15:04:05.999999999Z07:00")
 	// fmt.Println(timeStr, "loheagnttt", r.name, off, len(dest))
+
+	Lock.Lock()
+	Usage[r.name] = append(Usage[r.name], Range{uint64(off), uint64(off) + uint64(len(dest))})
+	Lock.Unlock()
 
 	if len(r.buf) > 0 {
 		end := int(off) + len(dest)

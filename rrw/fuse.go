@@ -6,6 +6,7 @@ import (
 	"context"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -16,10 +17,10 @@ import (
 )
 
 const (
-	BLOCK_SIZE              = 4096
-	SMALL_FILE_TYPE    byte = 'o'
-	CACHE_PATH              = "/var/rrw/blocks"
-	NFS_BLOCK_PATH          = "/mnt/nfs_client/nfs_block/"
+	BLOCK_SIZE           = 4096
+	SMALL_FILE_TYPE byte = 'o'
+	CACHE_PATH           = "/var/rrw/blocks"
+	NFS_BLOCK_PATH       = "/mnt/nfs_client/nfs_block/"
 )
 
 func getTarXattrs(h *tar.Header) map[string]string {
@@ -182,6 +183,7 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 }
 
 func MountRRW(metaReader io.ReaderAt, blobDigest, path string) error {
+	Usage = map[string][]Range{}
 	rrwRoot := &RRWRoot{
 		tr:         tar.NewReader(&ReaderAtWrapper{r: metaReader}),
 		blobDigest: blobDigest,
@@ -198,6 +200,26 @@ func MountRRW(metaReader io.ReaderAt, blobDigest, path string) error {
 	}
 
 	go server.Wait()
+
+	getDirSize := func(path string) (int64, error) {
+		var size int64
+		err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				size += info.Size()
+			}
+			return err
+		})
+		return size, err
+	}
+
+	Total, err = getDirSize(path)
+
+	if err != nil {
+		return err
+	}
 
 	return nil
 }
