@@ -53,6 +53,7 @@ import (
 	"github.com/containerd/containerd/v2/pkg/cri/store/sandbox"
 	"github.com/containerd/containerd/v2/pkg/cri/util"
 	"github.com/containerd/containerd/v2/platforms"
+	"github.com/containerd/containerd/v2/rrw"
 )
 
 const checkpointImageNameLabel = "org.opencontainers.image.ref.name"
@@ -64,6 +65,8 @@ func init() {
 
 // CreateContainer creates a new container in the given PodSandbox.
 func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateContainerRequest) (_ *runtime.CreateContainerResponse, retErr error) {
+	rrw.TS = []int64{}
+	rrw.TS = append(rrw.TS, time.Now().UnixMilli())
 	config := r.GetConfig()
 	log.G(ctx).Debugf("Container config %+v", config)
 	sandboxConfig := r.GetSandboxConfig()
@@ -234,6 +237,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	if needRestore {
 		opts = []containerd.NewContainerOpts{
 			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex),
+			containerd.WithRestoreRW(ctx, id, c.client, checkpoint, checkpointIndex),
 		}
 	} else {
 		opts = []containerd.NewContainerOpts{
@@ -1133,6 +1137,8 @@ func (c *criService) getCheckpointImage(ctx context.Context, sb sandbox.Sandbox,
 	if err != nil {
 		return nil, nil, nil, false
 	}
+
+	rrw.TS = append(rrw.TS, time.Now().UnixMilli())
 
 	return checkpoint, checkpointIndex, cp, true
 }

@@ -27,6 +27,7 @@ import (
 	containerdio "github.com/containerd/containerd/v2/cio"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/errdefs"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/log"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
@@ -191,6 +192,8 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	}
 
 	containerStartTimer.WithValues(info.Runtime.Name).UpdateSince(start)
+
+	rrw.TS = append(rrw.TS, time.Now().UnixMilli())
 
 	return &runtime.StartContainerResponse{}, nil
 }

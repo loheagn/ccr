@@ -34,6 +34,7 @@ import (
 	ctrdutil "github.com/containerd/containerd/v2/pkg/cri/util"
 	"github.com/containerd/containerd/v2/platforms"
 	"github.com/containerd/containerd/v2/protobuf"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/log"
 
 	"github.com/moby/sys/signal"
@@ -110,6 +111,8 @@ func (c *criService) stopContainer(ctx context.Context, container containerstore
 			log.G(ctx).Errorf("Failed to checkpoint container <%s> when try to stop it: %s", container.ID, err.Error())
 		}
 	}
+
+	fmt.Println("loheagn tttt", rrw.TS)
 
 	// Handle unknown state.
 	if state == runtime.ContainerState_CONTAINER_UNKNOWN {
@@ -264,7 +267,7 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 	opts := []containerd.CheckpointOpts{
 		containerd.WithCheckpointRuntime,
 		containerd.WithCheckpointImage,
-		containerd.WithExportCheckpointRW(crSB, cp.ID),
+		containerd.WithCheckpointRW,
 		containerd.WithCheckpointTask,
 	}
 

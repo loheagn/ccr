@@ -15,6 +15,8 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
+var TS = []int64{}
+
 const (
 	BLOCK_SIZE              = 4096
 	SMALL_FILE_TYPE    byte = 'o'
