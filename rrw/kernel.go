@@ -33,13 +33,14 @@ var bufPool = &sync.Pool{
 
 func TARToIMG(tarFilename string) (string, error) {
 	imgFilename := filepath.Join(KERNEL_IMG_PATH, uuid.NewString()+".img")
-	inodeMap, err := tarToIMG(tarFilename, imgFilename)
+	_, err := tarToIMG(tarFilename, imgFilename)
 	if err != nil {
 		os.Remove(imgFilename)
 		return "", err
 	}
 
-	return imgFilename, modifyImageByTAR(tarFilename, imgFilename, inodeMap)
+	// return imgFilename, modifyImageByTAR(tarFilename, imgFilename, inodeMap)
+	return imgFilename, nil
 }
 
 func modifyImageByTAR(tarFilename string, imageFilename string, inodeMap map[string]uint64) error {
@@ -148,7 +149,7 @@ func tarToIMG(tarFilename string, imageFilename string) (map[string]uint64, erro
 		return nil, err
 	}
 
-	root, err := os.MkdirTemp("/tmp", "kernel-mount-root-")
+	root, err := os.MkdirTemp("/var/rrw/temproot", "kernel-mount-root-")
 	if err != nil {
 		return nil, err
 	}
@@ -363,12 +364,12 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
 			return err
 		}
 
-		buf := bytes.NewBuffer(make([]byte, 0, hdr.Size))
-		if err := copySelectedBytes(reader, buf); err != nil {
-			return err
-		}
+		// buf := bytes.NewBuffer(make([]byte, 0, hdr.Size))
+		// if err := copySelectedBytes(reader, buf); err != nil {
+		// 	return err
+		// }
 
-		_, err = copyBuffered(ctx, file, buf)
+		_, err = copyBuffered(ctx, file, reader)
 		if err1 := file.Close(); err == nil {
 			err = err1
 		}

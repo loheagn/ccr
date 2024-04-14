@@ -177,15 +177,17 @@ func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 			return err
 		}
 
-		metaFileName, err := rrw.SplitTar(ctx, file.Name())
-		if err != nil {
-			return fmt.Errorf("failed to split tar: %w", err)
-		}
-		defer func() {
-			os.Remove(metaFileName)
-		}()
+		// metaFileName, err := rrw.SplitTar(ctx, file.Name())
+		// if err != nil {
+		// 	return fmt.Errorf("failed to split tar: %w", err)
+		// }
+		// defer func() {
+		// 	os.Remove(metaFileName)
+		// }()
 
-		imageFilename, err := rrw.TARToIMG(metaFileName)
+		file.Close()
+
+		imageFilename, err := rrw.TARToIMG(file.Name())
 		if err != nil {
 			return err
 		}

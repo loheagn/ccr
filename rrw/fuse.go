@@ -285,7 +285,7 @@ func createTmpTAR(reader io.Reader) (string, error) {
 }
 
 func KernelMountV2(imageFilename, path string) error {
-	mountCmd := fmt.Sprintf("mount -o loop -t simplefsrrw %s %s", imageFilename, path)
+	mountCmd := fmt.Sprintf("mount -o loop -t simplefs %s %s", imageFilename, path)
 	return exec.Command("bash", "-c", mountCmd).Run()
 }
 
