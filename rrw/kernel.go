@@ -337,7 +337,7 @@ func applyNaive(ctx context.Context, root string, r io.Reader) (size int64, inod
 		}
 	}
 
-	return size, nil, nil
+	return size, inodeMap, nil
 }
 
 func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header, reader io.Reader, noSameOwner bool) error {
