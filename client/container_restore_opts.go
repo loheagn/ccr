@@ -23,11 +23,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/samber/lo"
-
 	"github.com/containerd/containerd/v2/containers"
 	"github.com/containerd/containerd/v2/content"
 	"github.com/containerd/containerd/v2/images"
+	"github.com/containerd/containerd/v2/labels"
 	"github.com/containerd/containerd/v2/namespaces"
 	"github.com/containerd/containerd/v2/protobuf/proto"
 	ptypes "github.com/containerd/containerd/v2/protobuf/types"
@@ -76,32 +75,42 @@ func WithRestoreImage(ctx context.Context, id string, client *Client, checkpoint
 
 		snapshotInfoLabels := make(map[string]string)
 
-		rrwMeta, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
-			return m.MediaType == images.MediaTypeContainerd1LoheagnRRWMetadata
-		})
+		imageFilename, ok := index.Annotations[labels.LabelCheckpointKernelImage]
+
+		// rrwMeta, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
+		// 	return m.MediaType == images.MediaTypeContainerd1LoheagnRRWMetadata
+		// })
 
 		if ok {
 			rwPath, err := os.MkdirTemp(restorePath, fmt.Sprintf("%s-", c.ID))
 			if err != nil {
 				return err
 			}
-			metaReader, err := client.contentStore.ReaderAt(ctx, rrwMeta)
-			if err != nil {
-				return nil
-			}
+			// metaReader, err := client.contentStore.ReaderAt(ctx, rrwMeta)
+			// if err != nil {
+			// 	return nil
+			// }
 
-			rrwBlob, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
-				return m.MediaType == images.MediaTypeContainerd1LoheagnRRWContent
-			})
+			// rrwBlob, ok := lo.Find(index.Manifests, func(m imagespec.Descriptor) bool {
+			// 	return m.MediaType == images.MediaTypeContainerd1LoheagnRRWContent
+			// })
 
-			var rrwBlobDigest string
-			if ok {
-				rrwBlobDigest = rrwBlob.Digest.String()
-			}
+			// var rrwBlobDigest string
+			// if ok {
+			// 	rrwBlobDigest = rrwBlob.Digest.String()
+			// }
 
-			if err := rrw.MountRRW(metaReader, rrwBlobDigest, rwPath); err != nil {
+			// if err := rrw.MountRRW(metaReader, rrwBlobDigest, rwPath); err != nil {
+			// 	return err
+			// }
+			// if err := rrw.KernelMount(metaReader, rrwBlobDigest, rwPath); err != nil {
+			// 	return err
+			// }
+
+			if err := rrw.KernelMountV2(imageFilename, rwPath); err != nil {
 				return err
 			}
+
 			snapshotInfoLabels[snapshots.LabelSnapshotExtraRWPath] = rwPath
 		}
 

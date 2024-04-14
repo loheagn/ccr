@@ -185,39 +185,45 @@ func WithExportCheckpointRW(crSB, checkpointID string) CheckpointOpts {
 			os.Remove(metaFileName)
 		}()
 
-		writeFileToCS := func(filename string, mediaType, ref string) error {
-			fileStat, err := os.Stat(filename)
-			if err != nil {
-				return err
-			}
-			if fileStat.Size() == 0 {
-				return nil
-			}
-
-			fileReader, err := os.Open(filename)
-			if err != nil {
-				return err
-			}
-			defer fileReader.Close()
-
-			desc, err := writeContent(ctx, client.ContentStore(), mediaType, ref, fileReader)
-			if err != nil {
-				return err
-			}
-			desc.Platform = &imagespec.Platform{
-				OS:           runtime.GOOS,
-				Architecture: runtime.GOARCH,
-			}
-			index.Manifests = append(index.Manifests, desc)
-
-			return nil
-		}
-
-		if err := writeFileToCS(metaFileName, images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata"); err != nil {
+		imageFilename, err := rrw.TARToIMG(metaFileName)
+		if err != nil {
 			return err
 		}
 
+		// writeFileToCS := func(filename string, mediaType, ref string) error {
+		// 	fileStat, err := os.Stat(filename)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// 	if fileStat.Size() == 0 {
+		// 		return nil
+		// 	}
+
+		// 	fileReader, err := os.Open(filename)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// 	defer fileReader.Close()
+
+		// 	desc, err := writeContent(ctx, client.ContentStore(), mediaType, ref, fileReader)
+		// 	if err != nil {
+		// 		return err
+		// 	}
+		// 	desc.Platform = &imagespec.Platform{
+		// 		OS:           runtime.GOOS,
+		// 		Architecture: runtime.GOARCH,
+		// 	}
+		// 	index.Manifests = append(index.Manifests, desc)
+
+		// 	return nil
+		// }
+
+		// if err := writeFileToCS(metaFileName, images.MediaTypeContainerd1LoheagnRRWMetadata, c.ID+"-rrw-metadata"); err != nil {
+		// 	return err
+		// }
+
 		index.Annotations[labels.LabelCheckpointSandbox] = crSB
+		index.Annotations[labels.LabelCheckpointKernelImage] = imageFilename
 
 		return nil
 	}

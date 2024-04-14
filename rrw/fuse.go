@@ -4,8 +4,11 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
+	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -16,11 +19,21 @@ import (
 )
 
 const (
-	BLOCK_SIZE              = 4096
-	SMALL_FILE_TYPE    byte = 'o'
-	CACHE_PATH              = "/var/rrw/blocks"
-	NFS_BLOCK_PATH          = "/mnt/nfs_client/nfs_block/"
+	BLOCK_SIZE           = 4096
+	SMALL_FILE_TYPE byte = 'o'
+	CACHE_PATH           = "/var/rrw/blocks"
+	// NFS_BLOCK_PATH          = "/mnt/nfs_client/nfs_block/"
+	NFS_BLOCK_PATH = "/root/tarball/nfs_blocks/"
+
+	KERNEL_MOUNT_TAR_PATH = "/var/rrw/metatars"
+
+	KERNEL_IMG_PATH = "/var/rrw/imagepath"
 )
+
+func init() {
+	os.MkdirAll(KERNEL_MOUNT_TAR_PATH, 0755)
+	os.MkdirAll(KERNEL_IMG_PATH, 0755)
+}
 
 func getTarXattrs(h *tar.Header) map[string]string {
 	re := h.Xattrs
@@ -218,6 +231,78 @@ func MountRRWV2(metaReader io.Reader, blobDigest, path string) error {
 	}
 
 	server.Wait()
+
+	return nil
+}
+
+func fixTar(filePath string) error {
+	// 打开文件
+	file, err := os.OpenFile(filePath, os.O_RDWR, 0666)
+	if err != nil {
+		return fmt.Errorf("error opening file: %w", err)
+	}
+	defer file.Close()
+
+	// 获取文件状态信息
+	fileInfo, err := file.Stat()
+	if err != nil {
+		return fmt.Errorf("error getting file info: %w", err)
+	}
+
+	// 计算需要补充的0的数量
+	fileSize := fileInfo.Size()
+	remainder := fileSize % 4096
+	var paddingSize int64 = 0
+	if remainder != 0 {
+		paddingSize = 4096 - remainder
+	}
+
+	// 创建一个大小等于需要补0的切片
+	padding := make([]byte, paddingSize)
+
+	// 将切片写入文件末尾
+	_, err = file.WriteAt(padding, fileSize)
+	if err != nil {
+		return fmt.Errorf("error writing to file: %w", err)
+	}
+
+	return nil
+}
+
+func createTmpTAR(reader io.Reader) (string, error) {
+	// 创建临时文件
+	tempFile, err := os.CreateTemp(KERNEL_MOUNT_TAR_PATH, "")
+	if err != nil {
+		return "", fmt.Errorf("failed to create tmp tar for kernel mount: %w", err)
+	}
+	defer tempFile.Close()
+
+	if _, err := io.Copy(tempFile, reader); err != nil {
+		return "", fmt.Errorf("failed to write tmp tar for kernel mount: %w", err)
+	}
+
+	return tempFile.Name(), nil
+}
+
+func KernelMountV2(imageFilename, path string) error {
+	mountCmd := fmt.Sprintf("mount -o loop -t simplefsrrw %s %s", imageFilename, path)
+	return exec.Command("bash", "-c", mountCmd).Run()
+}
+
+func KernelMount(metaReader io.ReaderAt, blobDigest, path string) error {
+	reader := &ReaderAtWrapper{r: metaReader}
+	tarpath, err := createTmpTAR(reader)
+	if err != nil {
+		return err
+	}
+	if err := fixTar(tarpath); err != nil {
+		return err
+	}
+
+	mountCmd := fmt.Sprintf("mount -o loop -t tarfs %s %s", tarpath, path)
+	if err := exec.Command("bash", "-c", mountCmd).Run(); err != nil {
+		return err
+	}
 
 	return nil
 }

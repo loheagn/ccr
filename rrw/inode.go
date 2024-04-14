@@ -190,19 +190,16 @@ func SplitTar(ctx context.Context, tarFileName string) (metaFileName string, err
 			return "", fmt.Errorf("add: %w", err)
 		}
 
-		if hdr.Size < BLOCK_SIZE || !(tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag) {
-			if tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag {
-				hdr.Typeflag = SMALL_FILE_TYPE
-			}
+		if !(tar.TypeReg == hdr.Typeflag || tar.TypeRegA == hdr.Typeflag) {
 			if err := metaTW.WriteHeader(hdr); err != nil {
 				return "", err
 			}
-			if hdr.Size != 0 {
-				n, err := io.CopyN(metaTW, tr, int64(hdr.Size))
-				if err != nil {
-					return "", fmt.Errorf("copy %d bytes to metaTW: %w", n, err)
-				}
-			}
+			// if hdr.Size != 0 {
+			// 	n, err := io.CopyN(metaTW, tr, int64(hdr.Size))
+			// 	if err != nil {
+			// 		return "", fmt.Errorf("copy %d bytes to metaTW: %w", n, err)
+			// 	}
+			// }
 			continue
 		}
 
@@ -247,9 +244,13 @@ func writeByChunks(r io.Reader, offset uint64, size int64, wg *sync.WaitGroup, c
 			return err
 		}
 
-		newBuf := buf[:n]
+		if n < BLOCK_SIZE {
+			for i := n; i < BLOCK_SIZE; i++ {
+				buf[i] = 0
+			}
+		}
 
-		hash := sha256.Sum256(newBuf)
+		hash := sha256.Sum256(buf)
 		key := hex.EncodeToString(hash[:])
 
 		// if err := safeWriteFile(newBuf, filepath.Join(NFS_BLOCK_PATH, key)); err != nil {
