@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log"
 	"path/filepath"
@@ -16,10 +17,10 @@ import (
 )
 
 const (
-	BLOCK_SIZE              = 4096
-	SMALL_FILE_TYPE    byte = 'o'
-	CACHE_PATH              = "/var/rrw/blocks"
-	NFS_BLOCK_PATH          = "/mnt/nfs_client/nfs_block/"
+	BLOCK_SIZE           = 4096
+	SMALL_FILE_TYPE byte = 'o'
+	CACHE_PATH           = "/var/rrw/blocks"
+	NFS_BLOCK_PATH       = "/mnt/nfs_client/nfs_block/"
 )
 
 func getTarXattrs(h *tar.Header) map[string]string {
@@ -49,6 +50,7 @@ type RRWRoot struct {
 var _ = (fs.NodeOnAdder)((*RRWRoot)(nil))
 
 func (r *RRWRoot) OnAdd(ctx context.Context) {
+	startTime := time.Now()
 	tr := r.tr
 
 	var longName *string
@@ -179,6 +181,10 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 		inode := pathDirNode.GetChild(baseName)
 		targetDirNode.AddChild(filepath.Base(targetPath), inode, false)
 	}
+
+	endTime := time.Now()
+
+	fmt.Println("loheagn read tar usage: ", endTime.Sub(startTime).Milliseconds())
 }
 
 func MountRRW(metaReader io.ReaderAt, blobDigest, path string) error {
