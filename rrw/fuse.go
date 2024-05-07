@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -21,7 +22,24 @@ const (
 	SMALL_FILE_TYPE byte = 'o'
 	CACHE_PATH           = "/var/rrw/blocks"
 	NFS_BLOCK_PATH       = "/mnt/nfs_client/nfs_block/"
+	MetricFile           = "/root/rrw-metric"
 )
+
+func RecordTime(value interface{}) {
+	var v interface{} = value
+	if v == nil {
+		v = time.Now().UnixMilli()
+	}
+
+	file, err := os.OpenFile(MetricFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	file.WriteString(fmt.Sprintf(", %v", v))
+}
 
 func getTarXattrs(h *tar.Header) map[string]string {
 	re := h.Xattrs

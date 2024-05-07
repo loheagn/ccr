@@ -27,6 +27,7 @@ import (
 	containerdio "github.com/containerd/containerd/v2/cio"
 	containerd "github.com/containerd/containerd/v2/client"
 	"github.com/containerd/containerd/v2/errdefs"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/containerd/log"
 	runtime "k8s.io/cri-api/pkg/apis/runtime/v1"
 
@@ -166,10 +167,14 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 		return nil, fmt.Errorf("NRI container start failed: %w", err)
 	}
 
+	rrw.RecordTime(nil)
+
 	// Start containerd task.
 	if err := task.Start(ctx); err != nil {
 		return nil, fmt.Errorf("failed to start containerd task %q: %w", id, err)
 	}
+
+	rrw.RecordTime(nil)
 
 	// Update container start timestamp.
 	if err := cntr.Status.UpdateSync(func(status containerstore.Status) (containerstore.Status, error) {
@@ -191,6 +196,8 @@ func (c *criService) StartContainer(ctx context.Context, r *runtime.StartContain
 	}
 
 	containerStartTimer.WithValues(info.Runtime.Name).UpdateSince(start)
+
+	rrw.RecordTime(nil)
 
 	return &runtime.StartContainerResponse{}, nil
 }
