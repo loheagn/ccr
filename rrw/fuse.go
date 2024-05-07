@@ -5,15 +5,38 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
+	"os"
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
+
+const (
+	MetricFile = "/root/rrw-metric"
+)
+
+func RecordTime(value interface{}) {
+	var v interface{} = value
+	if v == nil {
+		v = time.Now().UnixMilli()
+	}
+
+	file, err := os.OpenFile(MetricFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		fmt.Println("Error opening file:", err)
+		return
+	}
+	defer file.Close()
+
+	file.WriteString(fmt.Sprintf(", %v", v))
+}
 
 const (
 	BLOCK_SIZE = 4096
