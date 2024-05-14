@@ -39,7 +39,7 @@ var (
 // readFromLocalSize  = 0
 )
 
-var lru = NewLRUCache(20480, 5*time.Minute, nil)
+var lru = NewLRUCache(20480, 10*time.Minute, nil)
 
 func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 	realLen := min(length, b.size-offset)
@@ -62,7 +62,7 @@ func (b *BlockInfo) Read(dest []byte, offset, length uint64) (uint64, error) {
 		if err != nil {
 			return 0, err
 		}
-		lru.Put(b.key, buf, 5*time.Second)
+		lru.Put(b.key, buf, 10*time.Minute)
 		go safeWriteFile(buf, blockPath)
 
 		cnt := copy(dest[:realLen], buf[offset:offset+realLen])
@@ -105,11 +105,9 @@ type DefaultRangeReader struct {
 }
 
 func (r *DefaultRangeReader) BackgroundCopy() {
-	// go func() {
-	// 	for _, b := range r.blockInfos {
-	// 		b.download()
-	// 	}
-	// }()
+	for _, b := range r.blockInfos {
+		b.download()
+	}
 }
 
 func (r *DefaultRangeReader) RangeRead(dest []byte, offset, length uint64) (uint64, error) {

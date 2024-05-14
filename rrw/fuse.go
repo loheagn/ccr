@@ -170,7 +170,6 @@ func (r *RRWRoot) OnAdd(ctx context.Context) {
 			rf.name = hdr.Name
 			p.AddChild(base, r.NewInode(ctx, rf, fs.StableAttr{}), false)
 			pNodeMap[hdr.Name] = p
-			rf.reader.BackgroundCopy()
 
 		case SMALL_FILE_TYPE:
 			rf := &RRWInode{}

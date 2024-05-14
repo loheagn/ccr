@@ -38,6 +38,8 @@ type RRWInode struct {
 
 	Attr   fuse.Attr
 	Xattrs map[string]string
+
+	lock sync.Mutex
 }
 
 var _ = (fs.NodeOpener)((*RRWInode)(nil))
@@ -78,12 +80,23 @@ func (r *RRWInode) Read(ctx context.Context, f fs.FileHandle, dest []byte, off i
 		return fuse.ReadResultData(r.buf), 0
 	}
 
+	// go r.preFetch()
+
 	length := min(uint64(len(dest)), r.Attr.Size-uint64(off))
 	_, err := r.reader.RangeRead(dest, uint64(off), length)
 	if err != nil {
 		return nil, syscall.Errno(fuse.EREMOTEIO)
 	}
 	return fuse.ReadResultData(dest), 0
+}
+
+func (r *RRWInode) preFetch() {
+	if !r.lock.TryLock() {
+		return
+	}
+	defer r.lock.Unlock()
+
+	r.reader.BackgroundCopy()
 }
 
 // Open implements fs.NodeOpener.
