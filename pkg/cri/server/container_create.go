@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -231,9 +232,15 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 	var opts []containerd.NewContainerOpts
 
 	// Set snapshotter before any other options.
+	var rwPath string
 	if needRestore {
+		restorePath := os.Getenv("CCR_RESTORE_RW_PATH")
+		rwPath, err = os.MkdirTemp(restorePath, fmt.Sprintf("%s-", id))
+		if err != nil {
+			return nil, err
+		}
 		opts = []containerd.NewContainerOpts{
-			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex),
+			containerd.WithRestoreImage(ctx, id, c.client, checkpoint, checkpointIndex, rwPath),
 		}
 	} else {
 		opts = []containerd.NewContainerOpts{
@@ -303,7 +310,7 @@ func (c *criService) CreateContainer(ctx context.Context, r *runtime.CreateConta
 
 	if needRestore {
 		opts = append(opts,
-			containerd.WithContainerFromCheckpoint(checkpointModel),
+			containerd.WithContainerFromCheckpoint(checkpointModel, rwPath),
 		)
 	}
 

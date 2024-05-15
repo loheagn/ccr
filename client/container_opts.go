@@ -272,7 +272,7 @@ func withNewSnapshot(id string, i Image, readonly bool, opts ...snapshots.Opt) N
 	}
 }
 
-func WithContainerFromCheckpoint(cp *model.Checkpoint) NewContainerOpts {
+func WithContainerFromCheckpoint(cp *model.Checkpoint, rrwPath string) NewContainerOpts {
 	return func(ctx context.Context, client *Client, c *containers.Container) error {
 		if cp == nil {
 			return nil
@@ -284,6 +284,7 @@ func WithContainerFromCheckpoint(cp *model.Checkpoint) NewContainerOpts {
 
 		c.Labels[labels.LabelCheckpointFromImage] = cp.Ref
 		c.Labels[labels.LabelCheckpointSandbox] = cp.Sandbox
+		c.Labels[labels.LabelCheckpointRRWPath] = rrwPath
 		return nil
 	}
 }

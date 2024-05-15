@@ -21,6 +21,12 @@ type Checkpoint struct {
 	Mount     CCRMount `gorm:"embedded;embeddedPrefix:mount_"`
 }
 
+type Im struct {
+	ID        string `gorm:"primaryKey"`
+	Original  string
+	Converted string
+}
+
 type CCRMount struct {
 	Type    string
 	Source  string
@@ -38,6 +44,19 @@ func NewCheckpointFromRequest(r *http.Request) (*Checkpoint, error) {
 		return nil, err
 	}
 	return &checkpoint, nil
+}
+
+func NewImFromRequest(r *http.Request) (*Im, error) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		return nil, err
+	}
+	var im Im
+	err = json.Unmarshal(data, &im)
+	if err != nil {
+		return nil, err
+	}
+	return &im, nil
 }
 
 func (c *Checkpoint) WriteToResponse(w http.ResponseWriter) {
@@ -63,5 +82,14 @@ func (c *Checkpoint) RemotePath() string {
 		return strings.Split(c.Mount.Source, ":")[1]
 	default:
 		return ""
+	}
+}
+
+func (c *Im) WriteToResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusOK)
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(c); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
 	}
 }

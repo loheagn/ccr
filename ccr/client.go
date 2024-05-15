@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -100,4 +101,43 @@ func UploadTar(id string, tarPath string) (*model.Checkpoint, error) {
 	}
 
 	return &checkpoint, nil
+}
+
+func RemoteMount(tarname, path string) error {
+	baseURL, err := url.Parse(client.baseURL + endpoint.Mount)
+	if err != nil {
+		return err
+	}
+	params := url.Values{}
+	params.Add("tarname", tarname)
+	params.Add("path", path)
+	baseURL.RawQuery = params.Encode()
+
+	resp, err := client.c.Get(baseURL.String())
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("remote mount return status: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func RemoteUnmount(path string) error {
+	baseURL, err := url.Parse(client.baseURL + endpoint.Unmount)
+	if err != nil {
+		return err
+	}
+	params := url.Values{}
+	params.Add("path", path)
+	baseURL.RawQuery = params.Encode()
+
+	resp, err := client.c.Get(baseURL.String())
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("remote mount return status: %d", resp.StatusCode)
+	}
+	return nil
 }

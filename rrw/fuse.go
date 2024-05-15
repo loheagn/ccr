@@ -244,3 +244,30 @@ func MountRRWV2(metaReader io.Reader, blobDigest, path string) error {
 
 	return nil
 }
+
+func RemoteMount(tarName, path string) (*fuse.Server, error) {
+	file, err := os.Open(tarName)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	rrwRoot := &RRWRoot{
+		tr:         tar.NewReader(&ReaderAtWrapper{r: file}),
+		blobDigest: "",
+	}
+
+	timeout := 60 * time.Minute
+	server, err := fs.Mount(path, rrwRoot, &fs.Options{
+		EntryTimeout:    &timeout,
+		AttrTimeout:     &timeout,
+		NegativeTimeout: &timeout,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	go server.Wait()
+
+	return server, nil
+}

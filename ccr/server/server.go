@@ -14,12 +14,16 @@ import (
 	"github.com/containerd/containerd/v2/archive"
 	"github.com/containerd/containerd/v2/ccr/endpoint"
 	"github.com/containerd/containerd/v2/ccr/model"
+	"github.com/containerd/containerd/v2/rrw"
 	"github.com/google/uuid"
+	"github.com/hanwen/go-fuse/v2/fuse"
 )
 
 var (
 	db        *gorm.DB
 	storePath string
+
+	mountRecord map[string]*fuse.Server = make(map[string]*fuse.Server)
 
 	registryHost = func() string {
 		host := os.Getenv("CCR_REGISTRY_HOST")
@@ -34,6 +38,10 @@ var (
 
 	registryNamespace = os.Getenv("CCR_REGISTRY_NAMESPACE")
 )
+
+func getRef(tag string) string {
+	return fmt.Sprintf("%s/test/%s-2:%s", registryHost, registryNamespace, tag)
+}
 
 func latestCheckpointQuery(sandbox, container string) *gorm.DB {
 	return db.Model(&model.Checkpoint{}).Where("sandbox = ? AND container = ? AND committed = ?", sandbox, container, true).Order("round desc")
@@ -60,7 +68,7 @@ func createCheckpoint(w http.ResponseWriter, r *http.Request) {
 		round = got.Round + 1
 	}
 
-	ref := fmt.Sprintf("%s/test/%s-2:checkpoint-%s-%s-v%d", registryHost, registryNamespace, req.Sandbox, req.Container, round)
+	ref := getRef(fmt.Sprintf("checkpoint-%s-%s-v%d", req.Sandbox, req.Container, round))
 
 	newCheckpoint := &model.Checkpoint{
 		ID:        uuid.NewString(),
@@ -161,17 +169,87 @@ func uploadTar(w http.ResponseWriter, r *http.Request) {
 	c.WriteToResponse(w)
 }
 
+func convertImageHandle(w http.ResponseWriter, r *http.Request) {
+	req, err := model.NewImFromRequest(r)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	converted, err := simpleConvertImage(req.Original)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	newIm := &model.Im{
+		ID:        uuid.NewString(),
+		Original:  req.Original,
+		Converted: converted,
+	}
+
+	if err := db.Create(newIm).Error; err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	newIm.WriteToResponse(w)
+}
+
+func remoteMount(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+
+	tarName := query.Get("tarname")
+	path := query.Get("path")
+
+	server, err := rrw.RemoteMount(tarName, path)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	mountRecord[path] = server
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func remoteUnmount(w http.ResponseWriter, r *http.Request) {
+	query := r.URL.Query()
+	path := query.Get("path")
+
+	server, ok := mountRecord[path]
+	if !ok {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	if server != nil {
+		server.Unmount()
+	}
+	delete(mountRecord, path)
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func setupDB() {
 	var err error
 	db, err = gorm.Open(sqlite.Open("main.db"), &gorm.Config{})
 	if err != nil {
 		panic("failed to connect database")
 	}
-	db.AutoMigrate(&model.Checkpoint{})
+	db.AutoMigrate(&model.Checkpoint{}, &model.Im{})
 }
 
 func main() {
 	setupDB()
+
+	defer func() {
+		for _, server := range mountRecord {
+			if server != nil {
+				server.Unmount()
+			}
+		}
+	}()
 
 	storePath = os.Getenv("CCR_STORE_PATH")
 
@@ -179,6 +257,9 @@ func main() {
 	http.HandleFunc(endpoint.CreateCheckpoint, createCheckpoint)
 	http.HandleFunc(endpoint.UploadTar, uploadTar)
 	http.HandleFunc(endpoint.CommitCheckpoint, commitCheckpoint)
+	http.HandleFunc(endpoint.ConvertImage, convertImageHandle)
+	http.HandleFunc(endpoint.Mount, remoteMount)
+	http.HandleFunc(endpoint.Unmount, remoteUnmount)
 
 	// Starting the server on port 8000.
 	fmt.Println("Server is running on port 8000...")

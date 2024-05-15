@@ -30,4 +30,5 @@ const LabelDistributionSource = "containerd.io/distribution.source"
 
 const LabelCheckpointSandbox = "loheagn.com/checkpoint/sandbox"
 const LabelCheckpointFromImage = "loheagn.com/checkpoint/from.image"
+const LabelCheckpointRRWPath= "loheagn.com/checkpoint/rrw.path"
 const LabelContainerNameInPod = "loheagn.com/checkpoint/container.name.in.pod"

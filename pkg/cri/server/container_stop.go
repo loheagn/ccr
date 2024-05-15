@@ -280,7 +280,7 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 	}
 
 	data, _ := json.Marshal(cp)
-	log.G(ctx).Warnf("final checkpoint is %s", string(data))
+	log.G(ctx).Infof("final checkpoint is %s", string(data))
 
 	if err := c.client.Push(ctx, cp.Ref, image.Target(), containerd.WithPlatform(platforms.DefaultString())); err != nil {
 		return nil, err

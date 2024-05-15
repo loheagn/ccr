@@ -126,7 +126,7 @@ func TestCheckpointRestorePTY(t *testing.T) {
 	}()
 
 	if container, err = client.Restore(ctx, id, checkpoint, []RestoreOpts{
-		WithRestoreImage,
+		// WithRestoreImage,
 		WithRestoreSpec,
 		WithRestoreRuntime,
 		WithRestoreRW,
@@ -221,7 +221,7 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 
 	if container, err = client.Restore(ctx, id, checkpoint, []RestoreOpts{
-		WithRestoreImage,
+		// WithRestoreImage,
 		WithRestoreSpec,
 		WithRestoreRuntime,
 		WithRestoreRW,
@@ -305,7 +305,7 @@ func TestCheckpointRestoreNewContainer(t *testing.T) {
 		t.Fatal(err)
 	}
 	if container, err = client.Restore(ctx, id, checkpoint, []RestoreOpts{
-		WithRestoreImage,
+		// WithRestoreImage,
 		WithRestoreSpec,
 		WithRestoreRuntime,
 		WithRestoreRW,

@@ -106,6 +106,8 @@ func CreateDiffAndWrite(ctx context.Context, snapshotID string, sn snapshots.Sna
 		if err != nil {
 			return fmt.Errorf("failed to create tmp dir when try do full diff: %w", err)
 		}
+		defer os.RemoveAll(emptyDir)
+
 		if errOpen := archive.WriteDiff(ctx, writer, emptyDir, upperRoot); errOpen != nil {
 			return fmt.Errorf("failed to write diff: %w", errOpen)
 		}

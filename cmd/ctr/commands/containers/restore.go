@@ -72,7 +72,7 @@ var restoreCommand = cli.Command{
 		}
 
 		opts := []containerd.RestoreOpts{
-			containerd.WithRestoreImage,
+			// containerd.WithRestoreImage,
 			containerd.WithRestoreSpec,
 			containerd.WithRestoreRuntime,
 		}
