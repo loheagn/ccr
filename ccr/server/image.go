@@ -247,3 +247,56 @@ func convertImage(originalImagename string) (string, error) {
 
 	return ref, nil
 }
+
+func ensureImage(originImage, convertedImage string) error {
+	exist, err := checkImageExists(convertedImage)
+	if err != nil {
+		return err
+	}
+	if exist {
+		return nil
+	}
+
+	if err := pullImage(originImage); err != nil {
+		return err
+	}
+
+	if err := tagImage(originImage, convertedImage); err != nil {
+		return err
+	}
+
+	if err := pushImage(convertedImage); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func checkImageExists(imageName string) (bool, error) {
+	cmd := exec.Command("nerdctl", "-n", "k8s.io", "image", "inspect", imageName)
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		if strings.Contains(string(output), "no such") {
+			return false, nil
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
+func pullImage(imageName string) error {
+	cmd := exec.Command("nerdctl", "-n", "k8s.io", "pull", imageName)
+	return cmd.Run()
+}
+
+func tagImage(sourceImage, targetImage string) error {
+	cmd := exec.Command("nerdctl", "-n", "k8s.io", "tag", sourceImage, targetImage)
+	return cmd.Run()
+}
+
+func pushImage(imageName string) error {
+	cmd := exec.Command("nerdctl", "-n", "k8s.io", "push", imageName)
+	return cmd.Run()
+}

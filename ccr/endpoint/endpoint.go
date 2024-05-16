@@ -6,6 +6,7 @@ const (
 	CommitCheckpoint = "/commitCheckpoint"
 	UploadTar        = "/uploadTar"
 	ConvertImage     = "/convertImage"
+	EnsureImage      = "/ensureImage"
 	Mount            = "/mount"
 	Unmount          = "/unmount"
 )

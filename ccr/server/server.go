@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,6 +19,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/hanwen/go-fuse/v2/fuse"
 )
+
+type EnsureImageRequest struct {
+	Original  string `json:"original"`
+	Converted string `json:"converted"`
+}
 
 var (
 	db        *gorm.DB
@@ -195,6 +202,27 @@ func convertImageHandle(w http.ResponseWriter, r *http.Request) {
 	newIm.WriteToResponse(w)
 }
 
+func ensureImageHandle(w http.ResponseWriter, r *http.Request) {
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+	var req EnsureImageRequest
+	err = json.Unmarshal(data, &req)
+	if err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		return
+	}
+
+	if err := ensureImage(req.Original, req.Converted); err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 func remoteMount(w http.ResponseWriter, r *http.Request) {
 	query := r.URL.Query()
 
@@ -260,6 +288,7 @@ func main() {
 	http.HandleFunc(endpoint.UploadTar, uploadTar)
 	http.HandleFunc(endpoint.CommitCheckpoint, commitCheckpoint)
 	http.HandleFunc(endpoint.ConvertImage, convertImageHandle)
+	http.HandleFunc(endpoint.EnsureImage, ensureImageHandle)
 	http.HandleFunc(endpoint.Mount, remoteMount)
 	http.HandleFunc(endpoint.Unmount, remoteUnmount)
 
