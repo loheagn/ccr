@@ -7,8 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/otiai10/copy"
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
 
 	"github.com/containerd/containerd/v2/archive"
@@ -145,24 +144,24 @@ func uploadTar(w http.ResponseWriter, r *http.Request) {
 	}
 	remotePath, _ = filepath.Abs(remotePath)
 
-	{
-		lastCheckpoint := model.Checkpoint{}
-		if result := latestCheckpointQuery(c.Sandbox, c.Container).First(&lastCheckpoint); result.Error == nil {
-			prePath := lastCheckpoint.RemotePath()
-			copy.Copy(prePath, remotePath)
-		}
-	}
+	// {
+	// 	lastCheckpoint := model.Checkpoint{}
+	// 	if result := latestCheckpointQuery(c.Sandbox, c.Container).First(&lastCheckpoint); result.Error == nil {
+	// 		prePath := lastCheckpoint.RemotePath()
+	// 		copy.Copy(prePath, remotePath)
+	// 	}
+	// }
 
 	archive.Apply(r.Context(), remotePath, r.Body)
 
-	c.Mount = model.CCRMount{
-		Type:   "nfs",
-		Source: "127.0.0.1:" + remotePath,
-		Options: []string{
-			"vers=4",
-			"addr=127.0.0.1",
-		},
-	}
+	// c.Mount = model.CCRMount{
+	// 	Type:   "nfs",
+	// 	Source: "127.0.0.1:" + remotePath,
+	// 	Options: []string{
+	// 		"vers=4",
+	// 		"addr=127.0.0.1",
+	// 	},
+	// }
 
 	db.Save(&c)
 
@@ -233,7 +232,10 @@ func remoteUnmount(w http.ResponseWriter, r *http.Request) {
 
 func setupDB() {
 	var err error
-	db, err = gorm.Open(sqlite.Open("main.db"), &gorm.Config{})
+	dsn := os.Getenv("CCR_DB_STRING")
+
+	// 使用 GORM 连接到数据库
+	db, err = gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		panic("failed to connect database")
 	}
