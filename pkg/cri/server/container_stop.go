@@ -286,7 +286,8 @@ func (c *criService) checkpointContainerBeforeStop(ctx context.Context, containe
 		return nil, err
 	}
 
-	return image, c.cleanupCheckpointStuff(ctx, image)
+	// return image, c.cleanupCheckpointStuff(ctx, image)
+	return image, nil
 }
 
 func (c *criService) cleanupCheckpointStuff(ctx context.Context, image containerd.Image) error {
