@@ -39,7 +39,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/hanwen/go-fuse/v2 v2.4.2
 	github.com/intel/goresctrl v0.6.0
-	github.com/klauspost/compress v1.17.4
+	github.com/klauspost/compress v1.17.9
 	github.com/minio/sha256-simd v1.0.1
 	github.com/moby/locker v1.0.1
 	github.com/moby/sys/mountinfo v0.7.1
@@ -52,7 +52,6 @@ require (
 	github.com/opencontainers/runtime-spec v1.1.1-0.20230823135140-4fec88fd00a4
 	github.com/opencontainers/runtime-tools v0.9.1-0.20221107090550-2e043c6bd626
 	github.com/opencontainers/selinux v1.11.0
-	github.com/otiai10/copy v1.14.0
 	github.com/pelletier/go-toml/v2 v2.1.1
 	github.com/prometheus/client_golang v1.17.0
 	github.com/samber/lo v1.39.0
@@ -76,6 +75,7 @@ require (
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231212172506-995d672761c0
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.32.0
+	gorm.io/driver/mysql v1.5.6
 	gorm.io/gorm v1.25.10
 	k8s.io/apimachinery v0.29.0
 	k8s.io/client-go v0.29.0
@@ -93,9 +93,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
-	github.com/mattn/go-sqlite3 v1.14.17 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
-	gorm.io/driver/mysql v1.5.6 // indirect
 )
 
 require (
@@ -148,7 +146,6 @@ require (
 	gopkg.in/inf.v0 v0.9.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	gorm.io/driver/sqlite v1.5.4
 	k8s.io/api v0.29.0 // indirect
 	k8s.io/apiserver v0.29.0 // indirect
 	sigs.k8s.io/json v0.0.0-20221116044647-bc3834ca7abd // indirect
